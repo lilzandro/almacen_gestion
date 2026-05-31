@@ -1,0 +1,12 @@
+services:
+  app:
+    build: .
+    environment:
+      - DISPLAY=${DISPLAY}
+      - XAUTHORITY=${XAUTHORITY:-/root/.Xauthority}
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${XAUTHORITY:-/root/.Xauthority}:/root/.Xauthority:ro
+      - ./inventory.db:/app/inventory.db
+    network_mode: host
+    restart: unless-stopped
