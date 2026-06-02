@@ -284,7 +284,8 @@ def get_products_grouped(search="", status_filter="todos", warehouse_id=None):
                    COUNT(*) AS unit_count,
                    COALESCE(sup.name,'N/A') AS supplier_name,
                    COALESCE(p.unit,'und') AS unit,
-                   MIN(p.status) AS status
+                   MIN(p.status) AS status,
+                   SUM(CASE WHEN p.status = 'disponible' THEN 1 ELSE 0 END) AS disponible_count
             FROM products p
             LEFT JOIN suppliers sup ON p.supplier_id = sup.id
             WHERE {where}
@@ -310,7 +311,8 @@ def get_units_by_model(name, brand, warehouse_id=None):
         rows = conn.execute(
             f"""
             SELECT p.id, p.serial, p.mac, p.status, p.barcode,
-                   COALESCE(p.unit,'und') AS unit
+                   COALESCE(p.unit,'und') AS unit,
+                   p.created_at
             FROM products p
             WHERE p.name = ? AND COALESCE(p.brand,'') = ?
               AND p.status != 'inactivo'

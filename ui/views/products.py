@@ -165,7 +165,7 @@ class ProductsView(ctk.CTkFrame):
             ("Modelo / Equipo", 200),
             ("Marca",           140),
             ("Unidades",        110),
-            ("Estado",          160),
+            ("Stock",           160),
             ("Proveedor",       0),
         ]
         for text, w in spacer_defs:
@@ -245,7 +245,7 @@ class ProductsView(ctk.CTkFrame):
         sub_hdr = ctk.CTkFrame(container, fg_color="#E8F1F8", height=26, corner_radius=0)
         sub_hdr.pack(fill="x", padx=(64, 8), pady=(2, 0))
         sub_hdr.pack_propagate(False)
-        for text, width, px in [("Serial", 200, (16, 8)), ("MAC", 180, (8, 8)), ("Estado", 0, (8, 4))]:
+        for text, width, px in [("Serial", 150, (16, 8)), ("MAC", 150, (8, 8)), ("Código", 120, (8, 8)), ("Registro", 100, (8, 8)), ("Estado", 0, (8, 4))]:
             kw = {"width": width} if width else {}
             ctk.CTkLabel(
                 sub_hdr, text=text, fg_color="transparent",
@@ -437,13 +437,28 @@ class _ChildRow(ctk.CTkFrame):
         self._bind_events()
 
     def _build(self):
+        raw_date = self.unit["created_at"] or ""
+        try:
+            from datetime import datetime
+            fecha = datetime.fromisoformat(raw_date).strftime("%d/%m/%Y")
+        except Exception:
+            fecha = raw_date[:10] if raw_date else "—"
+
         ctk.CTkLabel(
             self, text=self.unit["serial"] or "—",
-            width=200, font=ctk.CTkFont(size=12), text_color="#2D3748", anchor="w",
+            width=150, font=ctk.CTkFont(size=12), text_color="#2D3748", anchor="w",
         ).pack(side="left", padx=(16, 8))
         ctk.CTkLabel(
             self, text=self.unit["mac"] or "—",
-            width=180, font=ctk.CTkFont(size=12), text_color="#2D3748", anchor="w",
+            width=150, font=ctk.CTkFont(size=12), text_color="#2D3748", anchor="w",
+        ).pack(side="left", padx=8)
+        ctk.CTkLabel(
+            self, text=self.unit["barcode"] or "—",
+            width=120, font=ctk.CTkFont(size=12), text_color="#2D3748", anchor="w",
+        ).pack(side="left", padx=8)
+        ctk.CTkLabel(
+            self, text=fecha,
+            width=100, font=ctk.CTkFont(size=12), text_color="#6B7280", anchor="w",
         ).pack(side="left", padx=8)
         _StatusPill(self, self.unit["status"]).pack(side="left", padx=8)
 
@@ -527,7 +542,19 @@ class _GroupRow(ctk.CTkFrame):
             width=110,
         ).pack(side="left", padx=6)
 
-        _StatusPill(self, self.data["status"]).pack(side="left", padx=6)
+        dc = self.data["disponible_count"]
+        if dc == 0:
+            stock_bg, stock_fg, stock_txt = "#FDE2E0", "#B42318", "Agotado"
+        elif dc <= 10:
+            stock_bg, stock_fg, stock_txt = "#FDECC8", "#B45309", f"Stock Bajo ({dc})"
+        else:
+            stock_bg, stock_fg, stock_txt = "#DFF1E6", "#2F8A55", f"Disponible ({dc})"
+        stock_pill = ctk.CTkFrame(self, fg_color=stock_bg, corner_radius=12)
+        stock_pill.pack(side="left", padx=6)
+        ctk.CTkLabel(stock_pill, text="●", text_color=stock_fg,
+                     font=ctk.CTkFont(size=8)).pack(side="left", padx=(8, 4))
+        ctk.CTkLabel(stock_pill, text=stock_txt, text_color=stock_fg,
+                     font=ctk.CTkFont(size=11, weight="bold")).pack(side="left", padx=(0, 10), pady=3)
 
         ctk.CTkLabel(
             self, text=self.data["supplier_name"] or "—",
