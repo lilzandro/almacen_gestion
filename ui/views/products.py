@@ -1,5 +1,6 @@
+import tkinter as tk
 import customtkinter as ctk
-from ui.animations import dialog_open
+
 from ui.widgets import (
     center_dialog,
     MessageDialog,
@@ -28,6 +29,41 @@ _STATUS_LABELS = {
     "no disponible": "No Disponible",
     "inactivo":      "Inactivo",
 }
+
+
+def _setup_table_cols(frame):
+    """Config de columnas compartida entre header y _GroupRow."""
+    frame.grid_columnconfigure(0, weight=0, minsize=50)   # chevron
+    frame.grid_columnconfigure(1, weight=2, minsize=160)   # modelo
+    frame.grid_columnconfigure(2, weight=1, minsize=120)   # marca
+    frame.grid_columnconfigure(3, weight=0, minsize=120)   # unidades
+    frame.grid_columnconfigure(4, weight=0, minsize=160)   # stock
+    frame.grid_columnconfigure(5, weight=1, minsize=100)   # proveedor
+    frame.grid_rowconfigure(0, weight=1)
+
+
+def _truncating_label(parent, full_text, **kw):
+    """tk.Label que trunca con … cuando el texto excede el ancho disponible."""
+    import tkinter.font as tkfont
+    var = tk.StringVar(value=full_text)
+    lbl = tk.Label(parent, textvariable=var, **kw)
+
+    def _resize(e):
+        try:
+            fo = tkfont.Font(font=lbl.cget("font"))
+            avail = max(e.width - 6, 20)
+            if fo.measure(full_text) <= avail:
+                var.set(full_text)
+                return
+            t = full_text
+            while t and fo.measure(t + "…") > avail:
+                t = t[:-1]
+            var.set((t.rstrip() + "…") if t else "…")
+        except Exception:
+            pass
+
+    lbl.bind("<Configure>", _resize)
+    return lbl
 
 
 class ProductsView(ctk.CTkFrame):
@@ -156,25 +192,22 @@ class ProductsView(ctk.CTkFrame):
             ).pack(side="left", padx=4)
 
     def _build_table_header(self, parent):
-        hdr = ctk.CTkFrame(parent, fg_color="#084887", height=36, corner_radius=0)
-        hdr.grid(row=0, column=0, sticky="ew")
-        hdr.pack_propagate(False)
+        outer = ctk.CTkFrame(parent, fg_color="#084887", height=36, corner_radius=0)
+        outer.grid(row=0, column=0, sticky="ew")
+        outer.pack_propagate(False)
 
-        spacer_defs = [
-            ("",               36),
-            ("Modelo / Equipo", 200),
-            ("Marca",           140),
-            ("Unidades",        110),
-            ("Stock",           160),
-            ("Proveedor",       0),
-        ]
-        for text, w in spacer_defs:
-            kw = {"width": w} if w else {}
-            ctk.CTkLabel(
-                hdr, text=text, fg_color="transparent",
-                text_color="white", font=ctk.CTkFont(size=12, weight="bold"),
-                anchor="w", **kw,
-            ).pack(side="left", padx=(14 if text in ("", "Modelo / Equipo") else 6, 4), pady=6)
+        inner = tk.Frame(outer, bg="#084887")
+        # padx derecho compensa el ancho del scrollbar de CTkScrollableFrame (~16px)
+        inner.pack(fill="both", expand=True, padx=(0, 16))
+        _setup_table_cols(inner)
+
+        headers = ["", "Modelo / Equipo", "Marca", "Unidades", "Stock", "Proveedor"]
+        for col, text in enumerate(headers):
+            px = (12, 4) if col == 0 else (8, 4)
+            tk.Label(
+                inner, text=text, bg="#084887", fg="white",
+                font=("Segoe UI", 11, "bold"), anchor="w",
+            ).grid(row=0, column=col, sticky="ew", padx=px, pady=4)
 
     def set_status_filter(self, status: str):
         self._status_filter.set(status)
@@ -477,11 +510,20 @@ class _ChildRow(ctk.CTkFrame):
             if not self._is_selected:
                 self.configure(fg_color=self._NORMAL_BG)
 
+        _fired = [False]
+        def double_guard(e):
+            if _fired[0]:
+                return
+            _fired[0] = True
+            self.after(300, lambda: _fired.__setitem__(0, False))
+            self._on_edit()
+
         for w in [self] + self._descendants():
             w.bind("<Button-1>", click, add="+")
-            w.bind("<Double-Button-1>", double, add="+")
+            w.bind("<Double-Button-1>", double_guard, add="+")
             w.bind("<Enter>", enter, add="+")
             w.bind("<Leave>", leave, add="+")
+
 
     def _descendants(self):
         result = []
@@ -502,46 +544,57 @@ class _ChildRow(ctk.CTkFrame):
 
 
 class _GroupRow(ctk.CTkFrame):
-    def __init__(self, parent, data, on_toggle, bg_color="transparent"):
+    def __init__(self, parent, data, on_toggle, bg_color="#EAF4FB"):
         super().__init__(parent, fg_color=bg_color, height=52)
         self.data = data
         self.is_open = False
         self._on_toggle = on_toggle
         self._bg = bg_color
+        self._tk_labels = []   # tk.Label refs para actualizar en hover
         self.pack_propagate(False)
         self._build()
         self._bind_hover()
 
     def _build(self):
+        inner = tk.Frame(self, bg=self._bg)
+        inner.pack(fill="both", expand=True)
+        inner.pack_propagate(False)
+        self._inner = inner
+        _setup_table_cols(inner)
+
+        # Col 0: chevron
         self.chevron = ctk.CTkButton(
-            self, text="▸", width=22, height=22,
+            inner, text="▸", width=26, height=26,
             fg_color="transparent", hover_color="#D4E6F1",
-            text_color="#6B7280", font=ctk.CTkFont(size=14),
+            text_color="#6B7280", font=ctk.CTkFont(size=13),
             command=self._toggle,
         )
-        self.chevron.pack(side="left", padx=(14, 0))
+        self.chevron.grid(row=0, column=0, padx=(10, 2))
 
-        ctk.CTkLabel(
-            self, text=self.data["name"], anchor="w",
-            font=ctk.CTkFont(size=13, weight="bold"), text_color="#1B1F24",
-            width=200,
-        ).pack(side="left", padx=14)
+        # Col 1: modelo (trunca con … si excede el ancho)
+        lbl = _truncating_label(inner, self.data["name"],
+                                font=("Segoe UI", 12, "bold"), fg="#1B1F24",
+                                bg=self._bg, anchor="w")
+        lbl.grid(row=0, column=1, sticky="ew", padx=(8, 4))
+        self._tk_labels.append(lbl)
 
-        ctk.CTkLabel(
-            self, text=self.data["brand"] or "—",
-            font=ctk.CTkFont(size=13), text_color="#1B1F24",
-            width=140,
-        ).pack(side="left", padx=6)
+        # Col 2: marca
+        lbl = tk.Label(inner, text=self.data["brand"] or "—",
+                       font=("Segoe UI", 12), fg="#1B1F24",
+                       bg=self._bg, anchor="w")
+        lbl.grid(row=0, column=2, sticky="ew", padx=(4, 4))
+        self._tk_labels.append(lbl)
 
+        # Col 3: unidades badge
         count = self.data["unit_count"]
         ctk.CTkLabel(
-            self,
+            inner,
             text=f"{count}  {'unidad' if count == 1 else 'uds.'}",
             fg_color="#EEF0F3", corner_radius=12,
-            font=ctk.CTkFont(size=12, weight="bold"), text_color="#2D3748",
-            width=110,
-        ).pack(side="left", padx=6)
+            font=ctk.CTkFont(size=11, weight="bold"), text_color="#2D3748",
+        ).grid(row=0, column=3, padx=8, sticky="w")
 
+        # Col 4: stock pill
         dc = self.data["disponible_count"]
         if dc == 0:
             stock_bg, stock_fg, stock_txt = "#FDE2E0", "#B42318", "Agotado"
@@ -549,24 +602,32 @@ class _GroupRow(ctk.CTkFrame):
             stock_bg, stock_fg, stock_txt = "#FDECC8", "#B45309", f"Stock Bajo ({dc})"
         else:
             stock_bg, stock_fg, stock_txt = "#DFF1E6", "#2F8A55", f"Disponible ({dc})"
-        stock_pill = ctk.CTkFrame(self, fg_color=stock_bg, corner_radius=12)
-        stock_pill.pack(side="left", padx=6)
-        ctk.CTkLabel(stock_pill, text="●", text_color=stock_fg,
+        pill = ctk.CTkFrame(inner, fg_color=stock_bg, corner_radius=12)
+        pill.grid(row=0, column=4, padx=8, sticky="w")
+        ctk.CTkLabel(pill, text="●", text_color=stock_fg,
                      font=ctk.CTkFont(size=8)).pack(side="left", padx=(8, 4))
-        ctk.CTkLabel(stock_pill, text=stock_txt, text_color=stock_fg,
+        ctk.CTkLabel(pill, text=stock_txt, text_color=stock_fg,
                      font=ctk.CTkFont(size=11, weight="bold")).pack(side="left", padx=(0, 10), pady=3)
 
-        ctk.CTkLabel(
-            self, text=self.data["supplier_name"] or "—",
-            font=ctk.CTkFont(size=12), text_color="#6B7280",
-        ).pack(side="left", padx=(10, 4))
+        # Col 5: proveedor
+        lbl = tk.Label(inner, text=self.data["supplier_name"] or "—",
+                       font=("Segoe UI", 11), fg="#6B7280",
+                       bg=self._bg, anchor="w")
+        lbl.grid(row=0, column=5, sticky="ew", padx=(8, 4))
+        self._tk_labels.append(lbl)
 
     def _bind_hover(self):
         def enter(e):
             self.configure(fg_color="#EEF0F3")
+            self._inner.configure(bg="#EEF0F3")
+            for w in self._tk_labels:
+                w.configure(bg="#EEF0F3")
 
         def leave(e):
             self.configure(fg_color=self._bg)
+            self._inner.configure(bg=self._bg)
+            for w in self._tk_labels:
+                w.configure(bg=self._bg)
 
         for w in [self] + self._descendants():
             w.bind("<Enter>", enter, add="+")
@@ -629,7 +690,7 @@ class _BarcodeScanDialog(ctk.CTkToplevel):
 
         self.barcode_entry.bind("<Return>", lambda e: self._on_accept())
         self.grab_set()
-        self.after(1, lambda: dialog_open(self))
+        self.grab_set()
 
     def _center_and_grab(self):
         center_dialog(self)
@@ -670,7 +731,7 @@ class _ProductDialog(ctk.CTkToplevel):
             self._build_edit_mode(sup_names, d)
 
         self.grab_set()
-        self.after(1, lambda: dialog_open(self))
+        self.grab_set()
 
     # ── ADD MODE ──────────────────────────────────────────────────────────────
 

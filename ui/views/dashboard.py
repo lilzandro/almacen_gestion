@@ -5,7 +5,6 @@ try:
 except ImportError:
     Image = None
 
-from ui.animations import animate_counter
 from ui.dashboard_widgets import (
     make_dashboard_movements_list,
     setup_dashboard_movements_style,
@@ -252,7 +251,7 @@ class DashboardView(ctk.CTkFrame):
             for key, lbl in self._stat_vars.items():
                 lookup_key = movement_key_map.get(key, key)
                 val = int(counts.get(lookup_key) or 0)
-                animate_counter(lbl, val)
+                lbl.configure(text=str(val))
 
             # Limpiar contenedor de movimientos anteriores, pero preservar el indicador de carga
             for widget in self.movements_content.winfo_children():

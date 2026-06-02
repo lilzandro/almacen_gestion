@@ -1,6 +1,6 @@
 import customtkinter as ctk
 from tkinter import messagebox, filedialog
-from ui.animations import dialog_open
+
 from ui.widgets import make_table, clear_tree, setup_treeview_style
 from database.repository import (
     get_all_movements,
@@ -494,7 +494,7 @@ class _MovementDialog(ctk.CTkToplevel):
             command=self.destroy,
         ).pack(side="left", expand=True, padx=5)
 
-        self.after(1, lambda: dialog_open(self))
+        self.grab_set()
 
     def _on_type_change(self, type_):
         if type_ == "salida":

@@ -1,7 +1,6 @@
 import customtkinter as ctk
 import tkinter as tk
 from tkinter import ttk
-from ui.animations import dialog_open
 
 
 def setup_treeview_style():
@@ -196,7 +195,6 @@ class ConfirmDialog(ctk.CTkToplevel):
 
         self.update_idletasks()
         self.grab_set()
-        self.after(1, lambda: dialog_open(self))
 
     def _on_yes(self):
         self.result = True
@@ -262,4 +260,3 @@ class MessageDialog(ctk.CTkToplevel):
 
         self.update_idletasks()
         self.grab_set()
-        self.after(1, lambda: dialog_open(self))
