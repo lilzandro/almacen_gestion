@@ -1,4 +1,5 @@
 import customtkinter as ctk
+from ui.colors import *
 
 try:
     from PIL import Image
@@ -9,7 +10,7 @@ except ImportError:
 class Sidebar(ctk.CTkFrame):
     def __init__(self, parent, current_user: dict, on_navigate, on_logout):
         super().__init__(
-            parent, width=300, corner_radius=0, fg_color="#031D44"
+            parent, width=300, corner_radius=0, fg_color=AZUL_NOCHE
         )  # Primario (Dark)
         self.pack_propagate(False)
         self.on_navigate = on_navigate
@@ -27,31 +28,31 @@ class Sidebar(ctk.CTkFrame):
                 ctk.CTkLabel(logo, image=self.logo_img, text="").pack()
             except Exception:
                 ctk.CTkLabel(
-                    logo, text="📠", font=ctk.CTkFont(size=40), text_color="#F7F5FB"
+                    logo, text="📠", font=ctk.CTkFont(size=40), text_color=BLANCO_CALIDO
                 ).pack()
         else:
             ctk.CTkLabel(
-                logo, text="📠", font=ctk.CTkFont(size=40), text_color="#F7F5FB"
+                logo, text="📠", font=ctk.CTkFont(size=40), text_color=BLANCO_CALIDO
             ).pack()
         ctk.CTkLabel(
             logo,
             text="DigiCable",
             font=ctk.CTkFont(size=24, weight="bold"),
-            text_color="#F7F5FB",
+            text_color=BLANCO_CALIDO,
         ).pack()
         ctk.CTkLabel(
             logo,
             text="Sistema de Control de Inventarios",
             font=ctk.CTkFont(size=14),
-            text_color="#8ECAE6",
+            text_color=AZUL_CIELO,
         ).pack()
 
-        ctk.CTkFrame(self, height=1, fg_color="#084887").pack(
+        ctk.CTkFrame(self, height=1, fg_color=AZUL_MARINO).pack(
             fill="x", padx=12, pady=14
         )
 
         # Barra indicadora activa (deslizante)
-        self._indicator = ctk.CTkFrame(self, fg_color="#F58A07", width=5, corner_radius=2)
+        self._indicator = ctk.CTkFrame(self, fg_color=NARANJA_SELECCION, width=5, corner_radius=2)
         self._indicator_y = 0
 
         # Nav items
@@ -75,8 +76,8 @@ class Sidebar(ctk.CTkFrame):
                 corner_radius=8,
                 font=ctk.CTkFont(size=18),
                 fg_color="transparent",
-                hover_color="#031D44",  # Match sidebar background for no visual change on hover
-                text_color="#F7F5FB",
+                hover_color=AZUL_NOCHE,  # Match sidebar background for no visual change on hover
+                text_color=BLANCO_CALIDO,
                 command=lambda v=view: self._nav(v),
             )
             btn.pack(fill="x", padx=10, pady=2)
@@ -87,13 +88,13 @@ class Sidebar(ctk.CTkFrame):
             # Highlight default - active state should match hover effect
             if view == "dashboard":
                 btn.configure(
-                    fg_color="transparent", text_color="#F58A07"
+                    fg_color="transparent", text_color=NARANJA_SELECCION
                 )  # selección (matches hover effect)
                 self._active = btn
 
         # Spacer
         ctk.CTkFrame(self, fg_color="transparent").pack(fill="both", expand=True)
-        ctk.CTkFrame(self, height=1, fg_color="#084887").pack(fill="x", padx=12, pady=5)
+        ctk.CTkFrame(self, height=1, fg_color=AZUL_MARINO).pack(fill="x", padx=12, pady=5)
 
         # User info
         info = ctk.CTkFrame(self, fg_color="transparent")
@@ -103,17 +104,17 @@ class Sidebar(ctk.CTkFrame):
             info,
             text=current_user["username"],
             font=ctk.CTkFont(size=17, weight="bold"),
-            text_color="#F7F5FB",
+            text_color=BLANCO_CALIDO,
         ).pack(anchor="w")
         ctk.CTkLabel(
-            info, text=role_txt, font=ctk.CTkFont(size=15), text_color="#F7F5FB"
+            info, text=role_txt, font=ctk.CTkFont(size=15), text_color=BLANCO_CALIDO
         ).pack(anchor="w")
         ctk.CTkButton(
             info,
             text="Cerrar Sesión",
             height=34,
-            fg_color="#F58A07",  # Acción / Resaltado
-            hover_color="#D67A00",
+            fg_color=NARANJA_SELECCION,  # Acción / Resaltado
+            hover_color=HOVER_NARANJA_SEL,
             text_color="white",
             font=ctk.CTkFont(size=17),
             command=on_logout,
@@ -125,26 +126,26 @@ class Sidebar(ctk.CTkFrame):
         """Establece el color del texto al pasar el mouse por encima"""
         if button == self._active:
             # Mantener el botón activo en naranja
-            button.configure(text_color="#F58A07")
+            button.configure(text_color=NARANJA_SELECCION)
         else:
             # Cambiar botones inactivos a naranja al hacer hover
-            button.configure(text_color="#F58A07")
+            button.configure(text_color=NARANJA_SELECCION)
 
     def _on_button_leave(self, button):
         """Restaura el color del texto al salir el mouse"""
         if button == self._active:
             # Mantener el botón activo en naranja
-            button.configure(text_color="#F58A07")
+            button.configure(text_color=NARANJA_SELECCION)
         else:
             # Restaurar botones inactivos a blanco
-            button.configure(text_color="#F7F5FB")
+            button.configure(text_color=BLANCO_CALIDO)
 
     def _nav(self, view: str):
         if self._active:
-            self._active.configure(fg_color="transparent", text_color="#F7F5FB")
+            self._active.configure(fg_color="transparent", text_color=BLANCO_CALIDO)
         if view in self._buttons:
             btn = self._buttons[view]
-            btn.configure(fg_color="transparent", text_color="#F58A07")
+            btn.configure(fg_color="transparent", text_color=NARANJA_SELECCION)
             self._active = btn
             self._slide_indicator(btn)
         self.on_navigate(view)

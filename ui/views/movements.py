@@ -1,6 +1,7 @@
 import customtkinter as ctk
 from tkinter import messagebox, filedialog
 
+from ui.colors import *
 from ui.widgets import make_table, clear_tree, setup_treeview_style
 from database.repository import (
     get_all_movements,
@@ -15,7 +16,7 @@ from core.export import export_movements
 
 class MovementsView(ctk.CTkFrame):
     def __init__(self, parent, current_user, app=None):
-        super().__init__(parent, fg_color="#F7F5FB")  # Fondo Base
+        super().__init__(parent, fg_color=BLANCO_CALIDO)  # Fondo Base
         self.current_user = current_user
         self.app = app
         setup_treeview_style()
@@ -26,44 +27,44 @@ class MovementsView(ctk.CTkFrame):
 
     def _build(self):
         # Header
-        hdr = ctk.CTkFrame(self, fg_color="#F7F5FB")
+        hdr = ctk.CTkFrame(self, fg_color=BLANCO_CALIDO)
         hdr.grid(row=0, column=0, sticky="ew", padx=20, pady=(15, 5))
         ctk.CTkLabel(
             hdr,
             text="Movimientos",
             font=ctk.CTkFont(size=26, weight="bold"),
-            text_color="#031D44",
+            text_color=AZUL_NOCHE,
         ).pack(side="left")
-        btn_frame = ctk.CTkFrame(hdr, fg_color="#F7F5FB")
+        btn_frame = ctk.CTkFrame(hdr, fg_color=BLANCO_CALIDO)
         btn_frame.pack(side="right")
         ctk.CTkButton(
             btn_frame,
             text="+ Registrar Movimiento",
             height=36,
             command=self._register_dialog,
-            fg_color="#F58A07",
-            hover_color="#D67A00",
+            fg_color=NARANJA_SELECCION,
+            hover_color=HOVER_NARANJA_SEL,
             text_color="white",
         ).pack(side="left", padx=4)
         ctk.CTkButton(
             btn_frame,
             text="📥 Exportar Excel",
             height=36,
-            fg_color="#F9AB55",
-            hover_color="#E69545",
+            fg_color=HOVER_EXPORT,
+            hover_color=HOVER_EXPORT,
             text_color="white",
             command=self._export,
         ).pack(side="left", padx=4)
 
         # Search
         sf = ctk.CTkFrame(
-            self, fg_color="#FFFFFF", border_width=1, border_color="#084887"
+            self, fg_color=BLANCO, border_width=1, border_color=AZUL_MARINO
         )
         sf.grid(row=1, column=0, sticky="ew", padx=20, pady=(0, 10))
         sf.pack_propagate(False)
         sf.configure(height=50)
         ctk.CTkLabel(
-            sf, text="Buscar:", font=ctk.CTkFont(size=17), text_color="#084887"
+            sf, text="Buscar:", font=ctk.CTkFont(size=17), text_color=AZUL_MARINO
         ).pack(side="left", padx=(12, 4))
         self._search = ctk.StringVar()
         self._search.trace_add("write", lambda *_: self.refresh())
@@ -73,8 +74,8 @@ class MovementsView(ctk.CTkFrame):
             placeholder_text="Buscar producto, empleado...",
             border_width=0,
             fg_color="transparent",
-            text_color="#031D44",
-            placeholder_text_color="#9CA3AF",
+            text_color=AZUL_NOCHE,
+            placeholder_text_color=TEXTO_PLACEHOLDER,
             font=ctk.CTkFont(size=15),
         )
         self._search_entry.pack(side="left", fill="x", expand=True, padx=(0, 12))
@@ -83,11 +84,11 @@ class MovementsView(ctk.CTkFrame):
         self._type_filter = ctk.StringVar(value="todos")
         self._type_btns = {}
         type_defs = [
-            ("todos",      "Todos",       "#084887", "#031D44"),
-            ("entrada",    "Entrada",     "#219EBC", "#126782"),
-            ("salida",     "Salida",      "#F58A07", "#D67A00"),
-            ("devolucion", "Devolución",  "#FFB703", "#E6A500"),
-            ("asignacion", "Asignación",  "#8ECAE6", "#6BB8D9"),
+            ("todos",      "Todos",       AZUL_MARINO, AZUL_NOCHE),
+            ("entrada",    "Entrada",     AZUL_CERULEO, HOVER_FILTRO_DISP),
+            ("salida",     "Salida",      NARANJA_SELECCION, HOVER_NARANJA_SEL),
+            ("devolucion", "Devolución",  AMARILLO_AMBAR, HOVER_AMBAR),
+            ("asignacion", "Asignación",  AZUL_CIELO, HOVER_MOV_ASIG),
         ]
         for val, label, fg, hover in type_defs:
             btn = ctk.CTkButton(
@@ -101,7 +102,7 @@ class MovementsView(ctk.CTkFrame):
         self._update_type_buttons()
 
         # Table
-        tf = ctk.CTkFrame(self, fg_color="#F7F5FB")
+        tf = ctk.CTkFrame(self, fg_color=BLANCO_CALIDO)
         tf.grid(row=2, column=0, sticky="nsew", padx=20, pady=(0, 10))
         tf.grid_rowconfigure(0, weight=1)
         tf.grid_columnconfigure(0, weight=1)
@@ -125,11 +126,11 @@ class MovementsView(ctk.CTkFrame):
     def _update_type_buttons(self):
         active = self._type_filter.get()
         styles = {
-            "todos":      ("#084887", "#031D44"),
-            "entrada":    ("#219EBC", "#126782"),
-            "salida":     ("#F58A07", "#D67A00"),
-            "devolucion": ("#FFB703", "#E6A500"),
-            "asignacion": ("#8ECAE6", "#6BB8D9"),
+            "todos":      (AZUL_MARINO, AZUL_NOCHE),
+            "entrada":    (AZUL_CERULEO, HOVER_FILTRO_DISP),
+            "salida":     (NARANJA_SELECCION, HOVER_NARANJA_SEL),
+            "devolucion": (AMARILLO_AMBAR, HOVER_AMBAR),
+            "asignacion": (AZUL_CIELO, HOVER_MOV_ASIG),
         }
         for val, btn in self._type_btns.items():
             fg, _ = styles[val]
@@ -206,7 +207,7 @@ class _SearchableMultiSelect(ctk.CTkFrame):
 
         search_frame = ctk.CTkFrame(self, fg_color="white")
         search_frame.pack(fill="x", pady=(0, 5))
-        ctk.CTkLabel(search_frame, text="🔍", text_color="#6B7280").pack(
+        ctk.CTkLabel(search_frame, text="🔍", text_color=TEXTO_SECUNDARIO).pack(
             side="left", padx=(10, 2)
         )
         self.search_var = ctk.StringVar()
@@ -217,14 +218,14 @@ class _SearchableMultiSelect(ctk.CTkFrame):
             placeholder_text=placeholder,
             border_width=0,
             fg_color="white",
-            text_color="#023047",
+            text_color=TEXTO_MOV_FIELD,
         )
         self._search_entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
 
         self._count_label = ctk.CTkLabel(
             self,
             text="0 seleccionados",
-            text_color="#084887",
+            text_color=AZUL_MARINO,
             font=ctk.CTkFont(size=14, weight="bold"),
         )
         self._count_label.pack(anchor="w", pady=(0, 5))
@@ -268,18 +269,18 @@ class _SearchableMultiSelect(ctk.CTkFrame):
                     row,
                     width=60,
                     height=30,
-                    text_color="#023047",
-                    fg_color="#F0F4F8",
+                    text_color=TEXTO_MOV_FIELD,
+                    fg_color=FONDO_MULTI_QTY,
                     font=ctk.CTkFont(size=14),
                     placeholder_text="qty",
-                    placeholder_text_color="#A0AEC0",
+                    placeholder_text_color=TEXTO_PLACEHOLDER_LOGIN,
                     border_width=1,
                 )
                 qty_entry.insert(0, str(self._quantities.get(item_id, 1)))
                 qty_entry.pack(side="right", padx=5)
                 self._qty_entries[item_id] = qty_entry
                 ctk.CTkLabel(
-                    row, text="uds:", text_color="#6B7280", font=ctk.CTkFont(size=12)
+                    row, text="uds:", text_color=TEXTO_SECUNDARIO, font=ctk.CTkFont(size=12)
                 ).pack(side="right", padx=(0, 2))
 
             self._checkboxes[item_id] = var
@@ -319,7 +320,7 @@ class _MovementDialog(ctk.CTkToplevel):
         self.geometry("900x750")
         self.minsize(700, 600)
         self.resizable(True, True)
-        self.configure(fg_color="#F7F5FB")
+        self.configure(fg_color=BLANCO_CALIDO)
         self.transient(parent)
         self.current_user = current_user
         self.on_save = on_save
@@ -329,10 +330,10 @@ class _MovementDialog(ctk.CTkToplevel):
         self._employees = get_all_employees()
         self._vehicles = get_all_vehicles()
 
-        main = ctk.CTkFrame(self, fg_color="#F7F5FB")
+        main = ctk.CTkFrame(self, fg_color=BLANCO_CALIDO)
         main.pack(fill="both", expand=True)
 
-        header = ctk.CTkFrame(main, fg_color="#031D44", height=60)
+        header = ctk.CTkFrame(main, fg_color=AZUL_NOCHE, height=60)
         header.pack(fill="x", pady=(0, 15))
         header.pack_propagate(False)
         ctk.CTkLabel(
@@ -342,7 +343,7 @@ class _MovementDialog(ctk.CTkToplevel):
             text_color="white",
         ).pack(pady=15)
 
-        content = ctk.CTkFrame(main, fg_color="#F7F5FB")
+        content = ctk.CTkFrame(main, fg_color=BLANCO_CALIDO)
         content.pack(fill="both", expand=True, padx=20)
 
         left = ctk.CTkFrame(content, fg_color="white", corner_radius=10)
@@ -355,7 +356,7 @@ class _MovementDialog(ctk.CTkToplevel):
             left,
             text="DATOS DEL MOVIMIENTO",
             font=ctk.CTkFont(size=14, weight="bold"),
-            text_color="#023047",
+            text_color=TEXTO_MOV_FIELD,
         ).pack(anchor="w", padx=15, pady=(15, 10))
 
         type_frame = ctk.CTkFrame(left, fg_color="transparent")
@@ -364,7 +365,7 @@ class _MovementDialog(ctk.CTkToplevel):
             type_frame,
             text="Tipo:",
             font=ctk.CTkFont(size=14),
-            text_color="#023047",
+            text_color=TEXTO_MOV_FIELD,
         ).pack(side="left")
         self.type_opt = ctk.CTkOptionMenu(
             type_frame,
@@ -372,9 +373,9 @@ class _MovementDialog(ctk.CTkToplevel):
             font=ctk.CTkFont(size=14),
             command=self._on_type_change,
             text_color="white",
-            button_color="#084887",
-            button_hover_color="#031D44",
-            fg_color="#084887",
+            button_color=AZUL_MARINO,
+            button_hover_color=AZUL_NOCHE,
+            fg_color=AZUL_MARINO,
             dropdown_font=ctk.CTkFont(size=14),
             width=130,
         )
@@ -385,13 +386,13 @@ class _MovementDialog(ctk.CTkToplevel):
             left,
             text="PRODUCTOS *",
             font=ctk.CTkFont(size=14, weight="bold"),
-            text_color="#023047",
+            text_color=TEXTO_MOV_FIELD,
         ).pack(anchor="w", padx=15, pady=(15, 5))
         ctk.CTkLabel(
             left,
             text="Selecciona y escribe la cantidad por cada producto",
             font=ctk.CTkFont(size=11),
-            text_color="#6B7280",
+            text_color=TEXTO_SECUNDARIO,
         ).pack(anchor="w", padx=15, pady=(0, 5))
 
         products = [dict(p) for p in self._all_products if p["quantity"] > 0]
@@ -401,7 +402,7 @@ class _MovementDialog(ctk.CTkToplevel):
             "id",
             lambda p: f"{p['name']} (disp: {p['quantity']})",
             placeholder="Buscar producto...",
-            fg_color="#F3F4F6",
+            fg_color=FONDO_MULTISELECT,
             show_quantity=True,
         )
         self._prod_select.pack(fill="both", expand=True, padx=15, pady=(0, 15))
@@ -410,7 +411,7 @@ class _MovementDialog(ctk.CTkToplevel):
             right,
             text="ASIGNACIÓN",
             font=ctk.CTkFont(size=14, weight="bold"),
-            text_color="#023047",
+            text_color=TEXTO_MOV_FIELD,
         ).pack(anchor="w", padx=15, pady=(15, 10))
 
         self._emp_frame = ctk.CTkFrame(right, fg_color="transparent")
@@ -419,7 +420,7 @@ class _MovementDialog(ctk.CTkToplevel):
             self._emp_frame,
             text="👤 Empleados",
             font=ctk.CTkFont(size=14, weight="bold"),
-            text_color="#023047",
+            text_color=TEXTO_MOV_FIELD,
         ).pack(anchor="w", pady=(5, 5))
         self._emp_select = _SearchableMultiSelect(
             self._emp_frame,
@@ -427,7 +428,7 @@ class _MovementDialog(ctk.CTkToplevel):
             "id",
             lambda e: f"{e['name']} ({e['cedula']})",
             placeholder="Buscar empleado...",
-            fg_color="#F3F4F6",
+            fg_color=FONDO_MULTISELECT,
         )
         self._emp_select.pack(fill="x")
 
@@ -437,7 +438,7 @@ class _MovementDialog(ctk.CTkToplevel):
             self._veh_frame,
             text="🚚 Vehículo",
             font=ctk.CTkFont(size=14, weight="bold"),
-            text_color="#023047",
+            text_color=TEXTO_MOV_FIELD,
         ).pack(anchor="w", pady=(5, 5))
         vehicle_names = [
             f"{dict(v)['brand']} - {dict(v)['plate']}" for v in self._vehicles
@@ -447,9 +448,9 @@ class _MovementDialog(ctk.CTkToplevel):
             values=vehicle_names,
             font=ctk.CTkFont(size=14),
             text_color="white",
-            button_color="#084887",
-            button_hover_color="#031D44",
-            fg_color="#084887",
+            button_color=AZUL_MARINO,
+            button_hover_color=AZUL_NOCHE,
+            fg_color=AZUL_MARINO,
             dropdown_font=ctk.CTkFont(size=14),
         )
         self.vehicle_opt.pack(fill="x")
@@ -458,28 +459,28 @@ class _MovementDialog(ctk.CTkToplevel):
             right,
             text="📝 NOTAS",
             font=ctk.CTkFont(size=14, weight="bold"),
-            text_color="#023047",
+            text_color=TEXTO_MOV_FIELD,
         ).pack(anchor="w", padx=15, pady=(15, 5))
         self.notes_e = ctk.CTkEntry(
             right,
             height=80,
-            text_color="#023047",
-            fg_color="#F3F4F6",
+            text_color=TEXTO_MOV_FIELD,
+            fg_color=FONDO_MULTISELECT,
             font=ctk.CTkFont(size=14),
-            placeholder_text_color="#9CA3AF",
+            placeholder_text_color=TEXTO_PLACEHOLDER,
             border_width=1,
         )
         self.notes_e.pack(fill="x", padx=15, pady=(0, 15))
 
-        btns = ctk.CTkFrame(main, fg_color="#E8ECF0")
+        btns = ctk.CTkFrame(main, fg_color=FONDO_BTN_PIE)
         btns.pack(fill="x", padx=20, pady=15)
         ctk.CTkButton(
             btns,
             text="✓ REGISTRAR MOVIMIENTO",
             font=ctk.CTkFont(size=14, weight="bold"),
             command=self._save,
-            fg_color="#084887",
-            hover_color="#031D44",
+            fg_color=AZUL_MARINO,
+            hover_color=AZUL_NOCHE,
             text_color="white",
             height=45,
         ).pack(side="left", expand=True, padx=5)
@@ -487,8 +488,8 @@ class _MovementDialog(ctk.CTkToplevel):
             btns,
             text="✕ CANCELAR",
             font=ctk.CTkFont(size=14, weight="bold"),
-            fg_color="#FB8500",
-            hover_color="#C26800",
+            fg_color=NARANJA_INTENSO,
+            hover_color=HOVER_MOV_CANCEL,
             text_color="white",
             height=45,
             command=self.destroy,

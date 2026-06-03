@@ -151,6 +151,16 @@ def initialize_db():
         # Eliminamos la tabla scanners
         cursor.execute("DROP TABLE IF EXISTS scanners")
 
+    # Índices para acelerar consultas frecuentes
+    cursor.executescript("""
+        CREATE INDEX IF NOT EXISTS idx_products_name     ON products(name);
+        CREATE INDEX IF NOT EXISTS idx_products_status   ON products(status);
+        CREATE INDEX IF NOT EXISTS idx_products_brand    ON products(brand);
+        CREATE INDEX IF NOT EXISTS idx_products_wh       ON products(warehouse_id);
+        CREATE INDEX IF NOT EXISTS idx_movements_ts      ON movements(timestamp);
+        CREATE INDEX IF NOT EXISTS idx_movements_product ON movements(product_id);
+    """)
+
     # Seed almacenes por defecto
     cursor.execute(
         "INSERT OR IGNORE INTO warehouses (name, location) VALUES (?, ?)",

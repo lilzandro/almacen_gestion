@@ -1,5 +1,6 @@
 import customtkinter as ctk
 from tkinter import messagebox
+from ui.colors import *
 from ui.widgets import make_table, clear_tree, setup_treeview_style
 from database.repository import (
     get_all_vehicles,
@@ -11,7 +12,7 @@ from database.repository import (
 
 class VehiclesView(ctk.CTkFrame):
     def __init__(self, parent, current_user, app=None):
-        super().__init__(parent, fg_color="#F7F5FB")
+        super().__init__(parent, fg_color=BLANCO_CALIDO)
         self.current_user = current_user
         setup_treeview_style()
         self.grid_rowconfigure(2, weight=1)
@@ -20,13 +21,13 @@ class VehiclesView(ctk.CTkFrame):
         self.refresh()
 
     def _build(self):
-        hdr = ctk.CTkFrame(self, fg_color="#F7F5FB")
+        hdr = ctk.CTkFrame(self, fg_color=BLANCO_CALIDO)
         hdr.grid(row=0, column=0, sticky="ew", padx=20, pady=(15, 5))
         ctk.CTkLabel(
             hdr,
             text="Vehículos",
             font=ctk.CTkFont(size=26, weight="bold"),
-            text_color="#031D44",
+            text_color=AZUL_NOCHE,
         ).pack(side="left")
         if self.current_user["role"] == "admin":
             ctk.CTkButton(
@@ -34,19 +35,19 @@ class VehiclesView(ctk.CTkFrame):
                 text="+ Agregar Vehículo",
                 height=36,
                 command=self._add_dialog,
-                fg_color="#F58A07",
-                hover_color="#D67A00",
+                fg_color=NARANJA_SELECCION,
+                hover_color=HOVER_NARANJA_SEL,
                 text_color="white",
             ).pack(side="right")
 
         sf = ctk.CTkFrame(
-            self, fg_color="#FFFFFF", border_width=1, border_color="#084887"
+            self, fg_color=BLANCO, border_width=1, border_color=AZUL_MARINO
         )
         sf.grid(row=1, column=0, sticky="ew", padx=20, pady=(0, 10))
         sf.pack_propagate(False)
         sf.configure(height=50)
         ctk.CTkLabel(
-            sf, text="Buscar:", font=ctk.CTkFont(size=17), text_color="#084887"
+            sf, text="Buscar:", font=ctk.CTkFont(size=17), text_color=AZUL_MARINO
         ).pack(side="left", padx=(12, 4))
         self._search = ctk.StringVar()
         self._search.trace_add("write", lambda *_: self.refresh())
@@ -56,13 +57,13 @@ class VehiclesView(ctk.CTkFrame):
             placeholder_text="Buscar por marca o placa...",
             border_width=0,
             fg_color="transparent",
-            text_color="#031D44",
-            placeholder_text_color="#9CA3AF",
+            text_color=AZUL_NOCHE,
+            placeholder_text_color=TEXTO_PLACEHOLDER,
             font=ctk.CTkFont(size=15),
         )
         self._search_entry.pack(side="left", fill="x", expand=True, padx=(0, 12))
 
-        tf = ctk.CTkFrame(self, fg_color="#F7F5FB")
+        tf = ctk.CTkFrame(self, fg_color=BLANCO_CALIDO)
         tf.grid(row=2, column=0, sticky="nsew", padx=20, pady=5)
         tf.grid_rowconfigure(0, weight=1)
         tf.grid_columnconfigure(0, weight=1)
@@ -75,7 +76,7 @@ class VehiclesView(ctk.CTkFrame):
         ]
         self.tree = make_table(tf, cols, bg_color="white")
 
-        af = ctk.CTkFrame(self, fg_color="#F7F5FB")
+        af = ctk.CTkFrame(self, fg_color=BLANCO_CALIDO)
         af.grid(row=3, column=0, sticky="ew", padx=20, pady=(4, 10))
         ctk.CTkButton(
             af,
@@ -83,8 +84,8 @@ class VehiclesView(ctk.CTkFrame):
             width=120,
             height=34,
             command=self._edit_dialog,
-            fg_color="#084887",
-            hover_color="#063A69",
+            fg_color=AZUL_MARINO,
+            hover_color=SIDEBAR_HOVER,
             text_color="white",
         ).pack(side="left", padx=4)
         if self.current_user["role"] == "admin":
@@ -93,8 +94,8 @@ class VehiclesView(ctk.CTkFrame):
                 text="🗑️ Eliminar",
                 width=120,
                 height=34,
-                fg_color="#084887",
-                hover_color="#063A69",
+                fg_color=AZUL_MARINO,
+                hover_color=SIDEBAR_HOVER,
                 text_color="white",
                 command=self._delete,
             ).pack(side="left", padx=4)
@@ -162,15 +163,15 @@ class _VehicleDialog(ctk.CTkToplevel):
         self.geometry("550x400")
         self.minsize(450, 350)
         self.resizable(True, True)
-        self.configure(fg_color="#F7F5FB")
+        self.configure(fg_color=BLANCO_CALIDO)
         self.transient(parent)
         self.on_save = on_save
         d = initial or {}
 
-        main = ctk.CTkFrame(self, fg_color="#F7F5FB")
+        main = ctk.CTkFrame(self, fg_color=BLANCO_CALIDO)
         main.pack(fill="both", expand=True)
 
-        header = ctk.CTkFrame(main, fg_color="#031D44", height=60)
+        header = ctk.CTkFrame(main, fg_color=AZUL_NOCHE, height=60)
         header.pack(fill="x", pady=(0, 15))
         header.pack_propagate(False)
         ctk.CTkLabel(
@@ -180,7 +181,7 @@ class _VehicleDialog(ctk.CTkToplevel):
             text_color="white",
         ).pack(pady=15)
 
-        content = ctk.CTkFrame(main, fg_color="#F7F5FB")
+        content = ctk.CTkFrame(main, fg_color=BLANCO_CALIDO)
         content.pack(fill="both", expand=True, padx=20)
 
         left = ctk.CTkFrame(content, fg_color="white", corner_radius=10)
@@ -192,25 +193,25 @@ class _VehicleDialog(ctk.CTkToplevel):
             left,
             text="DATOS DEL VEHÍCULO",
             font=ctk.CTkFont(size=14, weight="bold"),
-            text_color="#031D44",
+            text_color=AZUL_NOCHE,
         ).pack(anchor="w", padx=15, pady=(15, 10))
 
         ctk.CTkLabel(
             left,
             text="Marca *",
             anchor="w",
-            text_color="#031D44",
+            text_color=AZUL_NOCHE,
             font=ctk.CTkFont(size=14),
         ).pack(fill="x", padx=15, pady=(5, 0))
         self.brand_e = ctk.CTkEntry(
             left,
             height=38,
-            text_color="#031D44",
-            fg_color="#F7F5FB",
+            text_color=AZUL_NOCHE,
+            fg_color=BLANCO_CALIDO,
             font=ctk.CTkFont(size=14),
-            placeholder_text_color="#9CA3AF",
+            placeholder_text_color=TEXTO_PLACEHOLDER,
             border_width=1,
-            border_color="#084887",
+            border_color=AZUL_MARINO,
         )
         if d.get("brand"):
             self.brand_e.insert(0, d["brand"])
@@ -220,18 +221,18 @@ class _VehicleDialog(ctk.CTkToplevel):
             left,
             text="Modelo",
             anchor="w",
-            text_color="#031D44",
+            text_color=AZUL_NOCHE,
             font=ctk.CTkFont(size=14),
         ).pack(fill="x", padx=15, pady=(10, 0))
         self.model_e = ctk.CTkEntry(
             left,
             height=38,
-            text_color="#031D44",
-            fg_color="#F7F5FB",
+            text_color=AZUL_NOCHE,
+            fg_color=BLANCO_CALIDO,
             font=ctk.CTkFont(size=14),
-            placeholder_text_color="#9CA3AF",
+            placeholder_text_color=TEXTO_PLACEHOLDER,
             border_width=1,
-            border_color="#084887",
+            border_color=AZUL_MARINO,
         )
         if d.get("model"):
             self.model_e.insert(0, d["model"])
@@ -241,39 +242,39 @@ class _VehicleDialog(ctk.CTkToplevel):
             right,
             text="IDENTIFICACIÓN",
             font=ctk.CTkFont(size=14, weight="bold"),
-            text_color="#031D44",
+            text_color=AZUL_NOCHE,
         ).pack(anchor="w", padx=15, pady=(15, 10))
 
         ctk.CTkLabel(
             right,
             text="Placa *",
             anchor="w",
-            text_color="#031D44",
+            text_color=AZUL_NOCHE,
             font=ctk.CTkFont(size=14),
         ).pack(fill="x", padx=15, pady=(5, 0))
         self.plate_e = ctk.CTkEntry(
             right,
             height=38,
-            text_color="#031D44",
-            fg_color="#F7F5FB",
+            text_color=AZUL_NOCHE,
+            fg_color=BLANCO_CALIDO,
             font=ctk.CTkFont(size=14),
-            placeholder_text_color="#9CA3AF",
+            placeholder_text_color=TEXTO_PLACEHOLDER,
             border_width=1,
-            border_color="#084887",
+            border_color=AZUL_MARINO,
         )
         if d.get("plate"):
             self.plate_e.insert(0, d["plate"])
         self.plate_e.pack(fill="x", padx=15)
 
-        btns = ctk.CTkFrame(main, fg_color="#F7F5FB")
+        btns = ctk.CTkFrame(main, fg_color=BLANCO_CALIDO)
         btns.pack(fill="x", padx=20, pady=15)
         ctk.CTkButton(
             btns,
             text="✓ GUARDAR",
             font=ctk.CTkFont(size=14, weight="bold"),
             command=self._save,
-            fg_color="#084887",
-            hover_color="#031D44",
+            fg_color=AZUL_MARINO,
+            hover_color=AZUL_NOCHE,
             text_color="white",
             height=45,
         ).pack(side="left", expand=True, padx=5)
@@ -281,8 +282,8 @@ class _VehicleDialog(ctk.CTkToplevel):
             btns,
             text="✕ CANCELAR",
             font=ctk.CTkFont(size=14, weight="bold"),
-            fg_color="#FB8500",
-            hover_color="#D67A00",
+            fg_color=NARANJA_INTENSO,
+            hover_color=HOVER_NARANJA_SEL,
             text_color="white",
             height=45,
             command=self.destroy,

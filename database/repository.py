@@ -1,4 +1,21 @@
+import time as _time
 from database.connection import get_connection
+
+_cache: dict = {}
+_CACHE_TTL = 5  # segundos
+
+
+def _cached(key, fn):
+    now = _time.time()
+    if key in _cache and (now - _cache[key][0]) < _CACHE_TTL:
+        return _cache[key][1]
+    data = fn()
+    _cache[key] = (now, data)
+    return data
+
+
+def _invalidate(key):
+    _cache.pop(key, None)
 
 
 # ── WAREHOUSES ────────────────────────────────────────────────────────────────
@@ -124,12 +141,13 @@ def delete_user(user_id):
 
 
 def get_all_suppliers():
-    conn = get_connection()
-    try:
-        rows = conn.execute("SELECT * FROM suppliers ORDER BY name").fetchall()
-        return rows
-    finally:
-        conn.close()
+    def _fetch():
+        conn = get_connection()
+        try:
+            return conn.execute("SELECT * FROM suppliers ORDER BY name").fetchall()
+        finally:
+            conn.close()
+    return _cached("suppliers", _fetch)
 
 
 def create_supplier(name, contact, rif):
@@ -141,6 +159,7 @@ def create_supplier(name, contact, rif):
             (name, contact, rif),
         )
         conn.commit()
+        _invalidate("suppliers")
         return cursor.lastrowid
     finally:
         conn.close()
@@ -154,6 +173,7 @@ def update_supplier(supplier_id, name, contact, rif):
             (name, contact, rif, supplier_id),
         )
         conn.commit()
+        _invalidate("suppliers")
     finally:
         conn.close()
 
@@ -163,6 +183,7 @@ def delete_supplier(supplier_id):
     try:
         conn.execute("DELETE FROM suppliers WHERE id=?", (supplier_id,))
         conn.commit()
+        _invalidate("suppliers")
     finally:
         conn.close()
 
@@ -171,12 +192,13 @@ def delete_supplier(supplier_id):
 
 
 def get_all_employees():
-    conn = get_connection()
-    try:
-        rows = conn.execute("SELECT * FROM employees ORDER BY name").fetchall()
-        return rows
-    finally:
-        conn.close()
+    def _fetch():
+        conn = get_connection()
+        try:
+            return conn.execute("SELECT * FROM employees ORDER BY name").fetchall()
+        finally:
+            conn.close()
+    return _cached("employees", _fetch)
 
 
 def create_employee(name, cedula, cargo):
@@ -187,6 +209,7 @@ def create_employee(name, cedula, cargo):
             (name, cedula, cargo),
         )
         conn.commit()
+        _invalidate("employees")
     finally:
         conn.close()
 
@@ -199,6 +222,7 @@ def update_employee(employee_id, name, cedula, cargo):
             (name, cedula, cargo, employee_id),
         )
         conn.commit()
+        _invalidate("employees")
     finally:
         conn.close()
 
@@ -208,6 +232,7 @@ def delete_employee(employee_id):
     try:
         conn.execute("DELETE FROM employees WHERE id=?", (employee_id,))
         conn.commit()
+        _invalidate("employees")
     finally:
         conn.close()
 
@@ -282,10 +307,10 @@ def get_products_grouped(search="", status_filter="todos", warehouse_id=None):
             f"""
             SELECT p.name, COALESCE(p.brand,'') AS brand,
                    COUNT(*) AS unit_count,
+                   SUM(CASE WHEN p.status='disponible' THEN 1 ELSE 0 END) AS disponible_count,
+                   MAX(p.supplier_id) AS supplier_id,
                    COALESCE(sup.name,'N/A') AS supplier_name,
-                   COALESCE(p.unit,'und') AS unit,
-                   MIN(p.status) AS status,
-                   SUM(CASE WHEN p.status = 'disponible' THEN 1 ELSE 0 END) AS disponible_count
+                   COALESCE(p.unit,'und') AS unit
             FROM products p
             LEFT JOIN suppliers sup ON p.supplier_id = sup.id
             WHERE {where}
@@ -311,7 +336,7 @@ def get_units_by_model(name, brand, warehouse_id=None):
         rows = conn.execute(
             f"""
             SELECT p.id, p.serial, p.mac, p.status, p.barcode,
-                   COALESCE(p.unit,'und') AS unit,
+                   COALESCE(p.unit,'und') AS unit, p.created_at,
                    p.created_at
             FROM products p
             WHERE p.name = ? AND COALESCE(p.brand,'') = ?
@@ -351,7 +376,8 @@ def get_all_products(search="", include_inactive=False, status_filter="todos",
             f"""
             SELECT p.id, p.name, p.barcode, p.brand, p.serial, p.mac,
                    p.quantity, COALESCE(p.unit,'und') AS unit, p.status,
-                   COALESCE(sup.name,'N/A') AS supplier_name, p.created_at, p.updated_at
+                   p.supplier_id, COALESCE(sup.name,'N/A') AS supplier_name,
+                   p.created_at, p.updated_at
             FROM products p
             LEFT JOIN suppliers sup ON p.supplier_id = sup.id
             WHERE {where_clause}
@@ -492,30 +518,42 @@ def update_product(
     name,
     barcode,
     brand,
-    serial,
-    mac,
-    quantity,
     supplier_id,
     unit="und",
+    status="disponible",
 ):
-    """Actualiza un producto"""
+    """Actualiza campos editables de un producto. Serial, MAC y cantidad no se modifican aquí."""
     conn = get_connection()
     try:
         conn.execute(
-            """UPDATE products SET name=?, barcode=?, brand=?, serial=?, mac=?, quantity=?,
-                                 supplier_id=?, unit=?, updated_at=datetime('now','localtime')
+            """UPDATE products SET name=?, barcode=?, brand=?,
+                                 supplier_id=?, unit=?, status=?,
+                                 updated_at=datetime('now','localtime')
                WHERE id=?""",
             (
                 name,
-                barcode or "",
+                barcode or None,
                 brand or "",
-                serial or "",
-                mac or "",
-                quantity or 0,
                 supplier_id or None,
                 unit or "und",
+                status,
                 product_id,
             ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def update_product_group(old_name, old_brand, new_name, new_brand, supplier_id):
+    """Actualiza nombre, marca y proveedor de todas las unidades de un grupo."""
+    conn = get_connection()
+    try:
+        conn.execute(
+            """UPDATE products SET name=?, brand=?, supplier_id=?,
+                                 updated_at=datetime('now','localtime')
+               WHERE name=? AND COALESCE(brand,'')=? AND status!='inactivo'""",
+            (new_name, new_brand, supplier_id or None, old_name, old_brand),
         )
         conn.commit()
     finally:

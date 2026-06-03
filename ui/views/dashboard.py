@@ -1,4 +1,5 @@
 import customtkinter as ctk
+from ui.colors import *
 
 try:
     from PIL import Image
@@ -18,7 +19,7 @@ from database.repository import (
 
 class DashboardView(ctk.CTkFrame):
     def __init__(self, parent, current_user, on_navigate=None, app=None):
-        super().__init__(parent, fg_color="#F7F5FB")  # Fondo Base
+        super().__init__(parent, fg_color=BLANCO_CALIDO)  # Fondo Base
         self.current_user = current_user
         self._on_navigate = on_navigate
         self.last_refresh_time = 0  # Timestamp of last refresh
@@ -52,7 +53,7 @@ class DashboardView(ctk.CTkFrame):
                 _bind(child)
 
         def on_enter(_e):
-            card.configure(fg_color="#F0F7FF", border_color=accent_color)
+            card.configure(fg_color=FONDO_ROW_IMPAR, border_color=accent_color)
 
         def on_leave(_e):
             card.configure(fg_color="white", border_color="white")
@@ -68,7 +69,7 @@ class DashboardView(ctk.CTkFrame):
         header_container.grid(row=0, column=0, sticky="ew", padx=20, pady=(15, 5))
 
         # Header with rounded corners inside the container
-        hdr = ctk.CTkFrame(header_container, fg_color="#031D44", corner_radius=10)
+        hdr = ctk.CTkFrame(header_container, fg_color=AZUL_NOCHE, corner_radius=10)
         hdr.pack(fill="both", expand=True)
 
         if Image:
@@ -88,17 +89,17 @@ class DashboardView(ctk.CTkFrame):
             title_frame,
             text="Dashboard",
             font=ctk.CTkFont(size=25, weight="bold"),
-            text_color="#F7F5FB",
+            text_color=BLANCO_CALIDO,
         ).pack(anchor="w", padx=(0, 20), pady=(12, 2))
         ctk.CTkLabel(
             title_frame,
             text="Resumen del inventario de productos",
-            text_color="#8ECAE6",
+            text_color=AZUL_CIELO,
             font=ctk.CTkFont(size=14),
         ).pack(anchor="w", padx=(0, 20), pady=(0, 10))
 
         # Stat cards - all 4 stats in a single row
-        cards_frame = ctk.CTkFrame(self, fg_color="#F7F5FB")
+        cards_frame = ctk.CTkFrame(self, fg_color=BLANCO_CALIDO)
         cards_frame.grid(row=1, column=0, sticky="ew", padx=20, pady=10)
 
         # Configure grid for all stats in a single row (4 columns)
@@ -111,13 +112,13 @@ class DashboardView(ctk.CTkFrame):
 
         # (key, title, icon_color, hover_border, icon, action)
         all_stat_defs = [
-            ("disponible",      "Productos Disponibles", "#F9AB55", "#F9AB55", "✅",
+            ("disponible",      "Productos Disponibles", HOVER_EXPORT, HOVER_EXPORT, "✅",
              lambda: self._go("products", lambda v: v.set_status_filter("disponible"))),
-            ("entrada_count",   "Entradas",              "#219EBC", "#F58A07", "📥",
+            ("entrada_count",   "Entradas",              AZUL_CERULEO, NARANJA_SELECCION, "📥",
              lambda: self._go("products")),
-            ("salida_count",    "Salidas",               "#F58A07", "#F58A07", "📤",
+            ("salida_count",    "Salidas",               NARANJA_SELECCION, NARANJA_SELECCION, "📤",
              lambda: self._go("movements", lambda v: v.set_type_filter("salida"))),
-            ("devolucion_count","Devoluciones",           "#F9AB55", "#F58A07", "↩️",
+            ("devolucion_count","Devoluciones",           HOVER_EXPORT, NARANJA_SELECCION, "↩️",
              lambda: self._go("movements", lambda v: v.set_type_filter("devolucion"))),
         ]
 
@@ -130,7 +131,7 @@ class DashboardView(ctk.CTkFrame):
 
             hint = ctk.CTkLabel(
                 card, text="Ver →",
-                font=ctk.CTkFont(size=11), text_color="#CCCCCC",
+                font=ctk.CTkFont(size=11), text_color=TEXTO_DASH_HINT,
             )
             hint.pack(anchor="e", padx=10, pady=(6, 0))
 
@@ -139,12 +140,12 @@ class DashboardView(ctk.CTkFrame):
             ).pack(pady=(0, 0))
             lbl = ctk.CTkLabel(
                 card, text="0",
-                font=ctk.CTkFont(size=40, weight="bold"), text_color="#031D44",
+                font=ctk.CTkFont(size=40, weight="bold"), text_color=AZUL_NOCHE,
             )
             lbl.pack()
             self._stat_vars[key] = lbl
             ctk.CTkLabel(
-                card, text=title, font=ctk.CTkFont(size=14), text_color="#031D44"
+                card, text=title, font=ctk.CTkFont(size=14), text_color=AZUL_NOCHE
             ).pack(pady=(0, 10))
 
             self._make_card_clickable(card, action, hover_border)
@@ -152,10 +153,10 @@ class DashboardView(ctk.CTkFrame):
         # Recent movements section with card-based design
         movements_frame = ctk.CTkFrame(
             self,
-            fg_color="#F8F9FA",
+            fg_color=DASHBOARD_BG,
             corner_radius=12,
             border_width=3,
-            border_color="#F58A07",
+            border_color=NARANJA_SELECCION,
         )
         movements_frame.grid(row=2, column=0, sticky="nsew", padx=20, pady=(10, 10))
         movements_frame.grid_rowconfigure(1, weight=1)
@@ -172,7 +173,7 @@ class DashboardView(ctk.CTkFrame):
             movements_header,
             text="Movimientos Recientes",
             font=ctk.CTkFont(size=20, weight="bold"),
-            text_color="#031D44",
+            text_color=AZUL_NOCHE,
         ).pack(anchor="w")
 
         # Subheader with count or last update info
@@ -180,7 +181,7 @@ class DashboardView(ctk.CTkFrame):
             movements_header,
             text="Últimos 50 movimientos",
             font=ctk.CTkFont(size=14),
-            text_color="#031D44",
+            text_color=AZUL_NOCHE,
         )
         self.movements_subheader.pack(anchor="w", pady=(2, 0))
 
@@ -208,7 +209,7 @@ class DashboardView(ctk.CTkFrame):
             self.loading_indicator,
             text="Cargando movimientos...",
             font=ctk.CTkFont(size=18),
-            text_color="#6C757D",
+            text_color=TEXTO_DASH_SEC,
         )
         self.loading_label.grid(row=0, column=0)
 

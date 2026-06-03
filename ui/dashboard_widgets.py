@@ -1,5 +1,6 @@
 import customtkinter as ctk
 from datetime import datetime
+from ui.colors import *
 
 
 def setup_dashboard_movements_style():
@@ -10,15 +11,15 @@ def create_movement_card(parent, movement_data, index):
     movement_data = dict(movement_data)
 
     type_colors = {
-        "entrada":    {"bg": "#D4EDDA", "fg": "#155724", "icon": "📥"},
-        "salida":     {"bg": "#F8D7DA", "fg": "#721C24", "icon": "📤"},
-        "asignacion": {"bg": "#D1ECF1", "fg": "#0C5460", "icon": "👤"},
-        "devolucion": {"bg": "#FFF3CD", "fg": "#856404", "icon": "↩️"},
+        "entrada":    {"bg": MOV_ENTRADA_BG, "fg": MOV_ENTRADA_FG, "icon": "📥"},
+        "salida":     {"bg": MOV_SALIDA_BG, "fg": MOV_SALIDA_FG, "icon": "📤"},
+        "asignacion": {"bg": MOV_ASIGNACION_BG, "fg": MOV_ASIGNACION_FG, "icon": "👤"},
+        "devolucion": {"bg": MOV_DEVOLUCION_BG, "fg": MOV_DEVOLUCION_FG, "icon": "↩️"},
     }
 
     movement_type = movement_data["type"].lower()
     type_info = type_colors.get(
-        movement_type, {"bg": "#F8F9FA", "fg": "#6C757D", "icon": "📋"}
+        movement_type, {"bg": MOV_DEFAULT_BG, "fg": TEXTO_DASH_SEC, "icon": "📋"}
     )
 
     card = ctk.CTkFrame(
@@ -26,7 +27,7 @@ def create_movement_card(parent, movement_data, index):
         fg_color="white",
         corner_radius=12,
         border_width=1,
-        border_color="#D5D8DB",
+        border_color=DASHBOARD_CARD_BORDER_SEC,
     )
     card.pack(fill="x", padx=10, pady=8)
 
@@ -73,7 +74,7 @@ def create_movement_card(parent, movement_data, index):
         content_frame,
         text=time_display,
         font=ctk.CTkFont(size=16),
-        text_color="#6C757D",
+        text_color=TEXTO_DASH_SEC,
     )
     time_label.grid(row=1, column=1, sticky="w", pady=(2, 0))
 
@@ -81,7 +82,7 @@ def create_movement_card(parent, movement_data, index):
         content_frame,
         text=f"📦 {movement_data['product']}",
         font=ctk.CTkFont(size=18),
-        text_color="#2C3E50",
+        text_color=TEXTO_DASH_LABEL,
         anchor="w",
     )
     product_label.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(12, 6))
@@ -92,7 +93,7 @@ def create_movement_card(parent, movement_data, index):
             content_frame,
             text=f"👤 {employee}",
             font=ctk.CTkFont(size=17),
-            text_color="#2C3E50",
+            text_color=TEXTO_DASH_LABEL,
             anchor="w",
         ).grid(row=3, column=0, columnspan=2, sticky="ew", pady=(0, 6))
 
@@ -102,7 +103,7 @@ def create_movement_card(parent, movement_data, index):
             content_frame,
             text=f"📝 {registered}",
             font=ctk.CTkFont(size=16),
-            text_color="#6C757D",
+            text_color=TEXTO_DASH_SEC,
             anchor="w",
         ).grid(row=4, column=0, columnspan=2, sticky="ew", pady=(0, 6))
 
@@ -112,7 +113,7 @@ def make_dashboard_movements_list(parent, movements_data, bg_color="#FFFFFF"):
         parent,
         fg_color=bg_color,
         border_width=2,
-        border_color="#031D44",
+        border_color=AZUL_NOCHE,
         corner_radius=12,
     )
     container.pack(fill="both", expand=True, padx=2, pady=2)
@@ -138,7 +139,7 @@ def make_dashboard_movements_list(parent, movements_data, bg_color="#FFFFFF"):
             scrollable_frame,
             text="No hay movimientos recientes",
             font=ctk.CTkFont(size=20),
-            text_color="#6C757D",
+            text_color=TEXTO_DASH_SEC,
         ).pack(pady=100)
         return container
 

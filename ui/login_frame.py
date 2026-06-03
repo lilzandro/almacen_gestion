@@ -1,5 +1,6 @@
 import customtkinter as ctk
 from core.auth import login, change_password
+from ui.colors import *
 
 try:
     from PIL import Image
@@ -9,7 +10,7 @@ except ImportError:
 
 class LoginFrame(ctk.CTkFrame):
     def __init__(self, parent, on_login_success):
-        super().__init__(parent, fg_color="#F7F5FB")  # Fondo Base
+        super().__init__(parent, fg_color=BLANCO_CALIDO)  # Fondo Base
         self.on_login_success = on_login_success
 
         # Centered card
@@ -28,23 +29,23 @@ class LoginFrame(ctk.CTkFrame):
                 ctk.CTkLabel(card, image=self.logo_img, text="").pack(pady=(30, 10))
             except Exception:
                 ctk.CTkLabel(
-                    card, text="📡", font=ctk.CTkFont(size=62), text_color="#084887"
+                    card, text="📡", font=ctk.CTkFont(size=62), text_color=AZUL_MARINO
                 ).pack(pady=(40, 4))
         else:
             ctk.CTkLabel(
-                card, text="📡", font=ctk.CTkFont(size=62), text_color="#084887"
+                card, text="📡", font=ctk.CTkFont(size=62), text_color=AZUL_MARINO
             ).pack(pady=(40, 4))
         ctk.CTkLabel(
             card,
             text="DigiCable",
             font=ctk.CTkFont(size=32, weight="bold"),
-            text_color="#031D44",
+            text_color=AZUL_NOCHE,
         ).pack()
         ctk.CTkLabel(
             card,
             text="Sistema de Control de Inventario",
             font=ctk.CTkFont(size=14),
-            text_color="#084887",
+            text_color=AZUL_MARINO,
         ).pack(pady=(2, 28))
 
         self.user_entry = ctk.CTkEntry(
@@ -53,9 +54,9 @@ class LoginFrame(ctk.CTkFrame):
             height=46,
             placeholder_text="Usuario",
             font=ctk.CTkFont(size=15),
-            text_color="#031D44",
-            placeholder_text_color="#A0AEC0",
-            fg_color="#F7F5FB",
+            text_color=AZUL_NOCHE,
+            placeholder_text_color=TEXTO_PLACEHOLDER_LOGIN,
+            fg_color=BLANCO_CALIDO,
         )
         self.user_entry.pack(pady=5)
 
@@ -66,16 +67,16 @@ class LoginFrame(ctk.CTkFrame):
             placeholder_text="Contraseña",
             show="•",
             font=ctk.CTkFont(size=15),
-            text_color="#031D44",
-            placeholder_text_color="#A0AEC0",
-            fg_color="#F7F5FB",
+            text_color=AZUL_NOCHE,
+            placeholder_text_color=TEXTO_PLACEHOLDER_LOGIN,
+            fg_color=BLANCO_CALIDO,
         )
         self.pass_entry.pack(pady=5)
 
         self.err_lbl = ctk.CTkLabel(
             card,
             text="",
-            text_color="#F58A07",  # Acción / Resaltado
+            text_color=NARANJA_SELECCION,  # Acción / Resaltado
             font=ctk.CTkFont(size=14),
         )
         self.err_lbl.pack(pady=4)
@@ -86,8 +87,8 @@ class LoginFrame(ctk.CTkFrame):
             width=320,
             height=46,
             font=ctk.CTkFont(size=16, weight="bold"),
-            fg_color="#084887",  # Secundario
-            hover_color="#063A69",
+            fg_color=AZUL_MARINO,  # Secundario
+            hover_color=SIDEBAR_HOVER,
             text_color="white",
             command=self._do_login,
         ).pack()
@@ -95,7 +96,7 @@ class LoginFrame(ctk.CTkFrame):
         ctk.CTkLabel(
             card,
             text="DigiCable © Inventario",
-            text_color="#A0AEC0",
+            text_color=TEXTO_PLACEHOLDER_LOGIN,
             font=ctk.CTkFont(size=11),
         ).pack(pady=(18, 0))
 
@@ -130,7 +131,7 @@ class _ForceChangePasswordDialog(ctk.CTkToplevel):
         self.title("Cambio de contraseña requerido")
         self.geometry("400x380")
         self.resizable(False, False)
-        self.configure(fg_color="#F7F5FB")
+        self.configure(fg_color=BLANCO_CALIDO)
         self.transient(parent)
         self.grab_set()
         self.protocol("WM_DELETE_WINDOW", lambda: None)  # No se puede cerrar sin cambiar
@@ -138,30 +139,30 @@ class _ForceChangePasswordDialog(ctk.CTkToplevel):
         self._user = user
         self._on_done = on_done
 
-        ctk.CTkFrame(self, fg_color="#031D44", height=56).pack(fill="x")
+        ctk.CTkFrame(self, fg_color=AZUL_NOCHE, height=56).pack(fill="x")
         ctk.CTkLabel(self, text="🔒  Debes cambiar tu contraseña",
                      font=ctk.CTkFont(size=16, weight="bold"),
-                     text_color="#031D44").pack(pady=(14, 2))
+                     text_color=AZUL_NOCHE).pack(pady=(14, 2))
         ctk.CTkLabel(self, text=f"Mínimo {self.MIN_LEN} caracteres.",
-                     font=ctk.CTkFont(size=12), text_color="#6B7280").pack()
+                     font=ctk.CTkFont(size=12), text_color=TEXTO_SECUNDARIO).pack()
 
         def _entry(ph):
             return ctk.CTkEntry(self, width=300, height=42, show="•",
                                 placeholder_text=ph, font=ctk.CTkFont(size=14),
-                                fg_color="white", border_width=1, border_color="#084887",
-                                text_color="#031D44")
+                                fg_color="white", border_width=1, border_color=AZUL_MARINO,
+                                text_color=AZUL_NOCHE)
 
         self._new_e = _entry("Nueva contraseña")
         self._new_e.pack(pady=(16, 6))
         self._confirm_e = _entry("Confirmar contraseña")
         self._confirm_e.pack(pady=(0, 6))
 
-        self._err = ctk.CTkLabel(self, text="", text_color="#FB8500",
+        self._err = ctk.CTkLabel(self, text="", text_color=NARANJA_INTENSO,
                                  font=ctk.CTkFont(size=13))
         self._err.pack()
 
         ctk.CTkButton(self, text="Guardar y continuar", width=300, height=42,
-                      fg_color="#084887", hover_color="#031D44", text_color="white",
+                      fg_color=AZUL_MARINO, hover_color=AZUL_NOCHE, text_color="white",
                       font=ctk.CTkFont(size=14, weight="bold"),
                       command=self._save).pack(pady=(10, 0))
 

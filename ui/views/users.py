@@ -1,5 +1,6 @@
 import customtkinter as ctk
 from tkinter import messagebox
+from ui.colors import *
 from ui.widgets import make_table, clear_tree, setup_treeview_style
 from database.repository import get_all_users, create_user, update_user, delete_user
 from core.auth import hash_password
@@ -7,7 +8,7 @@ from core.auth import hash_password
 
 class UsersView(ctk.CTkFrame):
     def __init__(self, parent, current_user, app=None):
-        super().__init__(parent, fg_color="#F7F5FB")  # Fondo Base
+        super().__init__(parent, fg_color=BLANCO_CALIDO)  # Fondo Base
         self.current_user = current_user
         setup_treeview_style()
         self.grid_rowconfigure(2, weight=1)
@@ -16,35 +17,35 @@ class UsersView(ctk.CTkFrame):
         self.refresh()
 
     def _build(self):
-        hdr = ctk.CTkFrame(self, fg_color="#F7F5FB")
+        hdr = ctk.CTkFrame(self, fg_color=BLANCO_CALIDO)
         hdr.grid(row=0, column=0, sticky="ew", padx=20, pady=(15, 5))
         ctk.CTkLabel(
             hdr,
             text="Gestión de Usuarios",
             font=ctk.CTkFont(size=26, weight="bold"),
-            text_color="#031D44",
+            text_color=AZUL_NOCHE,
         ).pack(side="left")
         ctk.CTkLabel(
-            hdr, text="⚙️ Solo Admin", text_color="#F9AB55", font=ctk.CTkFont(size=14)
+            hdr, text="⚙️ Solo Admin", text_color=HOVER_EXPORT, font=ctk.CTkFont(size=14)
         ).pack(side="left", padx=10)
         ctk.CTkButton(
             hdr,
             text="+ Agregar Usuario",
             height=36,
             command=self._add_dialog,
-            fg_color="#F58A07",
-            hover_color="#D67A00",
+            fg_color=NARANJA_SELECCION,
+            hover_color=HOVER_NARANJA_SEL,
             text_color="white",
         ).pack(side="right")
 
-        tf = ctk.CTkFrame(self, fg_color="#F7F5FB")
+        tf = ctk.CTkFrame(self, fg_color=BLANCO_CALIDO)
         tf.grid(row=2, column=0, sticky="nsew", padx=20, pady=5)
         tf.grid_rowconfigure(0, weight=1)
         tf.grid_columnconfigure(0, weight=1)
         cols = [("id", "ID", 50), ("username", "Usuario", 200), ("role", "Rol", 120)]
         self.tree = make_table(tf, cols, bg_color="white")
 
-        af = ctk.CTkFrame(self, fg_color="#F7F5FB")
+        af = ctk.CTkFrame(self, fg_color=BLANCO_CALIDO)
         af.grid(row=3, column=0, sticky="ew", padx=20, pady=(4, 10))
         ctk.CTkButton(
             af,
@@ -52,8 +53,8 @@ class UsersView(ctk.CTkFrame):
             width=120,
             height=34,
             command=self._edit_dialog,
-            fg_color="#084887",
-            hover_color="#063A69",
+            fg_color=AZUL_MARINO,
+            hover_color=SIDEBAR_HOVER,
             text_color="white",
         ).pack(side="left", padx=4)
         ctk.CTkButton(
@@ -61,8 +62,8 @@ class UsersView(ctk.CTkFrame):
             text="🗑️ Eliminar",
             width=120,
             height=34,
-            fg_color="#084887",  # Secundario
-            hover_color="#063A69",
+            fg_color=AZUL_MARINO,  # Secundario
+            hover_color=SIDEBAR_HOVER,
             text_color="white",
             command=self._delete,
         ).pack(side="left", padx=4)
@@ -137,10 +138,10 @@ class _UserDialog(ctk.CTkToplevel):
         d = initial or {}
         self.edit_mode = edit_mode
 
-        main = ctk.CTkFrame(self, fg_color="#F7F5FB")
+        main = ctk.CTkFrame(self, fg_color=BLANCO_CALIDO)
         main.pack(fill="both", expand=True)
 
-        header = ctk.CTkFrame(main, fg_color="#031D44", height=60)
+        header = ctk.CTkFrame(main, fg_color=AZUL_NOCHE, height=60)
         header.pack(fill="x", pady=(0, 15))
         header.pack_propagate(False)
         ctk.CTkLabel(
@@ -150,7 +151,7 @@ class _UserDialog(ctk.CTkToplevel):
             text_color="white",
         ).pack(pady=15)
 
-        content = ctk.CTkFrame(main, fg_color="#F7F5FB")
+        content = ctk.CTkFrame(main, fg_color=BLANCO_CALIDO)
         content.pack(fill="both", expand=True, padx=20)
 
         left = ctk.CTkFrame(content, fg_color="white", corner_radius=10)
@@ -162,24 +163,24 @@ class _UserDialog(ctk.CTkToplevel):
             left,
             text="CREDENCIALES",
             font=ctk.CTkFont(size=14, weight="bold"),
-            text_color="#031D44",
+            text_color=AZUL_NOCHE,
         ).pack(anchor="w", padx=15, pady=(15, 10))
 
         ctk.CTkLabel(
             left,
             text="Usuario *",
             anchor="w",
-            text_color="#031D44",
+            text_color=AZUL_NOCHE,
             font=ctk.CTkFont(size=14),
         ).pack(fill="x", padx=15, pady=(5, 0))
         self.user_e = ctk.CTkEntry(
             left,
             height=38,
-            text_color="#031D44",
-            placeholder_text_color="#A0AEC0",
-            fg_color="#F7F5FB",
+            text_color=AZUL_NOCHE,
+            placeholder_text_color=TEXTO_PLACEHOLDER_LOGIN,
+            fg_color=BLANCO_CALIDO,
             border_width=1,
-            border_color="#084887",
+            border_color=AZUL_MARINO,
             font=ctk.CTkFont(size=14),
         )
         if d.get("username"):
@@ -193,18 +194,18 @@ class _UserDialog(ctk.CTkToplevel):
             left,
             text=lbl_pass,
             anchor="w",
-            text_color="#031D44",
+            text_color=AZUL_NOCHE,
             font=ctk.CTkFont(size=14),
         ).pack(fill="x", padx=15, pady=(10, 0))
         self.pass_e = ctk.CTkEntry(
             left,
             height=38,
             show="•",
-            text_color="#031D44",
-            placeholder_text_color="#A0AEC0",
-            fg_color="#F7F5FB",
+            text_color=AZUL_NOCHE,
+            placeholder_text_color=TEXTO_PLACEHOLDER_LOGIN,
+            fg_color=BLANCO_CALIDO,
             border_width=1,
-            border_color="#084887",
+            border_color=AZUL_MARINO,
             font=ctk.CTkFont(size=14),
         )
         self.pass_e.pack(fill="x", padx=15)
@@ -213,38 +214,38 @@ class _UserDialog(ctk.CTkToplevel):
             right,
             text="PERMISOS",
             font=ctk.CTkFont(size=14, weight="bold"),
-            text_color="#031D44",
+            text_color=AZUL_NOCHE,
         ).pack(anchor="w", padx=15, pady=(15, 10))
 
         ctk.CTkLabel(
             right,
             text="Rol",
             anchor="w",
-            text_color="#031D44",
+            text_color=AZUL_NOCHE,
             font=ctk.CTkFont(size=14),
         ).pack(fill="x", padx=15, pady=(5, 0))
         self.role_opt = ctk.CTkOptionMenu(
             right,
             values=self.ROLES,
             text_color="white",
-            button_color="#084887",
-            button_hover_color="#031D44",
-            fg_color="#084887",
+            button_color=AZUL_MARINO,
+            button_hover_color=AZUL_NOCHE,
+            fg_color=AZUL_MARINO,
             font=ctk.CTkFont(size=14),
         )
         if d.get("role"):
             self.role_opt.set(d["role"])
         self.role_opt.pack(fill="x", padx=15)
 
-        btns = ctk.CTkFrame(main, fg_color="#F7F5FB")
+        btns = ctk.CTkFrame(main, fg_color=BLANCO_CALIDO)
         btns.pack(fill="x", padx=20, pady=15)
         ctk.CTkButton(
             btns,
             text="✓ GUARDAR",
             font=ctk.CTkFont(size=14, weight="bold"),
             command=self._save,
-            fg_color="#084887",
-            hover_color="#031D44",
+            fg_color=AZUL_MARINO,
+            hover_color=AZUL_NOCHE,
             text_color="white",
             height=45,
         ).pack(side="left", expand=True, padx=5)
@@ -252,8 +253,8 @@ class _UserDialog(ctk.CTkToplevel):
             btns,
             text="✕ CANCELAR",
             font=ctk.CTkFont(size=14, weight="bold"),
-            fg_color="#FB8500",
-            hover_color="#D67A00",
+            fg_color=NARANJA_INTENSO,
+            hover_color=HOVER_NARANJA_SEL,
             text_color="white",
             height=45,
             command=self.destroy,

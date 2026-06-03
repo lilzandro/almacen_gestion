@@ -1,6 +1,7 @@
 import customtkinter as ctk
 import tkinter as tk
 from tkinter import ttk
+from ui.colors import *
 
 
 def setup_treeview_style():
@@ -13,7 +14,7 @@ def setup_treeview_style():
     style.configure(
         "Inv.Treeview",
         background="white",
-        foreground="#031D44",
+        foreground=AZUL_NOCHE,
         fieldbackground="white",
         rowheight=32,
         font=("Segoe UI", 12),
@@ -24,17 +25,17 @@ def setup_treeview_style():
     style.configure("Inv.Treeview", padding=(10, 0))
     style.configure(
         "Inv.Treeview.Heading",
-        background="#084887",
+        background=AZUL_MARINO,
         foreground="white",
         font=("Segoe UI", 12, "bold"),
         relief="flat",
     )
     style.map(
         "Inv.Treeview",
-        background=[("selected", "#F58A07")],
+        background=[("selected", NARANJA_SELECCION)],
         foreground=[("selected", "white")],
     )
-    style.map("Inv.Treeview.Heading", background=[("active", "#031d44")])
+    style.map("Inv.Treeview.Heading", background=[("active", AZUL_NOCHE)])
 
 
 def make_table(parent, columns: list, bg_color="white") -> ttk.Treeview:
@@ -45,7 +46,7 @@ def make_table(parent, columns: list, bg_color="white") -> ttk.Treeview:
     frame = ctk.CTkFrame(
         parent,
         fg_color=bg_color,
-        border_color="#084887",  # Color azul oscuro solicitado
+        border_color=AZUL_MARINO,  # Color azul oscuro solicitado
         border_width=3,  # Grosor del borde exterior
         corner_radius=2,
     )
@@ -106,7 +107,7 @@ def _update_separators(tree):
         col = tree.identify_column(x)
         if col != prev_col and prev_col is not None:
             # Colocar la línea en x-1 para coincidir con el borde derecho de la columna anterior
-            sep = tk.Frame(frame, bg="#084887", width=3)
+            sep = tk.Frame(frame, bg=AZUL_MARINO, width=3)
             sep.place(x=x - 4, y=0, relheight=1.0)
             tree._separators.append(sep)
         prev_col = col
@@ -137,7 +138,7 @@ class ConfirmDialog(ctk.CTkToplevel):
         super().__init__(parent)
         self.title(title)
         self.resizable(False, False)
-        self.configure(fg_color="#F7F5FB")
+        self.configure(fg_color=BLANCO_CALIDO)
         self.result = False
         self.after_idle(lambda: center_dialog(self))
 
@@ -145,14 +146,14 @@ class ConfirmDialog(ctk.CTkToplevel):
             self,
             text=title,
             font=ctk.CTkFont(size=20, weight="bold"),
-            text_color="#031D44",
+            text_color=AZUL_NOCHE,
         ).pack(pady=(20, 10))
 
         msg_label = ctk.CTkLabel(
             self,
             text=message,
             font=ctk.CTkFont(size=16),
-            text_color="#2D3748",
+            text_color=GRIS_AZULADO,
             wraplength=360,
             justify="center",
         )
@@ -162,19 +163,19 @@ class ConfirmDialog(ctk.CTkToplevel):
         min_height = max(280, msg_label.winfo_reqheight() + 160)
         self.geometry(f"450x{min_height}")
 
-        btn_frame = ctk.CTkFrame(self, fg_color="#F7F5FB")
+        btn_frame = ctk.CTkFrame(self, fg_color=BLANCO_CALIDO)
         btn_frame.pack(pady=20)
         btn_frame.pack_propagate(False)
         btn_frame.configure(width=360)
 
-        btn_color = "#FB8500" if is_danger else "#219EBC"
+        btn_color = NARANJA_INTENSO if is_danger else AZUL_CERULEO
 
         ctk.CTkButton(
             btn_frame,
             text="Sí, continuar",
             command=self._on_yes,
             fg_color=btn_color,
-            hover_color="#023047" if is_danger else "#126782",
+            hover_color=HOVER_MARINO if is_danger else HOVER_FILTRO_DISP,
             text_color="white",
             width=150,
             height=40,
@@ -185,8 +186,8 @@ class ConfirmDialog(ctk.CTkToplevel):
             btn_frame,
             text="Cancelar",
             command=self._on_no,
-            fg_color="#A0AEC0",
-            hover_color="#718096",
+            fg_color=CANCELAR_BG,
+            hover_color=CANCELAR_HOVER,
             text_color="white",
             width=150,
             height=40,
@@ -212,10 +213,10 @@ class MessageDialog(ctk.CTkToplevel):
         super().__init__(parent)
         self.title(title)
         self.resizable(False, False)
-        self.configure(fg_color="#F7F5FB")
+        self.configure(fg_color=BLANCO_CALIDO)
         self.after_idle(lambda: center_dialog(self))
 
-        icon_color = "#FB8500" if is_error else "#219EBC"
+        icon_color = NARANJA_INTENSO if is_error else AZUL_CERULEO
         icon_text = "✕" if is_error else "✓"
 
         ctk.CTkLabel(
@@ -229,14 +230,14 @@ class MessageDialog(ctk.CTkToplevel):
             self,
             text=title,
             font=ctk.CTkFont(size=20, weight="bold"),
-            text_color="#031D44",
+            text_color=AZUL_NOCHE,
         ).pack(pady=(5, 10))
 
         msg_label = ctk.CTkLabel(
             self,
             text=message,
             font=ctk.CTkFont(size=16),
-            text_color="#2D3748",
+            text_color=GRIS_AZULADO,
             wraplength=360,
             justify="center",
         )
@@ -250,8 +251,8 @@ class MessageDialog(ctk.CTkToplevel):
             self,
             text="Aceptar",
             command=self.destroy,
-            fg_color="#219EBC",
-            hover_color="#126782",
+            fg_color=AZUL_CERULEO,
+            hover_color=HOVER_FILTRO_DISP,
             text_color="white",
             width=120,
             height=38,

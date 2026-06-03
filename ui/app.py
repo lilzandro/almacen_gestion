@@ -1,6 +1,7 @@
 import customtkinter as ctk
 from ui.login_frame import LoginFrame
 from ui.sidebar import Sidebar
+from ui.colors import *
 from database.repository import get_all_warehouses
 
 
@@ -49,7 +50,7 @@ class App(ctk.CTk):
         self._content.grid_columnconfigure(0, weight=1)
 
     def _build_warehouse_bar(self, parent):
-        bar = ctk.CTkFrame(parent, fg_color="#F7F5FB", height=54, corner_radius=0)
+        bar = ctk.CTkFrame(parent, fg_color=BLANCO_CALIDO, height=54, corner_radius=0)
         bar.grid(row=0, column=0, sticky="ew")
         bar.grid_propagate(False)
         bar.grid_columnconfigure(1, weight=1)
@@ -64,7 +65,7 @@ class App(ctk.CTk):
             bar,
             text="Almacén activo:",
             font=ctk.CTkFont(size=13, weight="bold"),
-            text_color="#2D3748",
+            text_color=GRIS_AZULADO,
         ).grid(row=0, column=1, sticky="w", pady=10)
 
         # Selector
@@ -73,12 +74,12 @@ class App(ctk.CTk):
             bar,
             values=wh_names,
             command=self._on_warehouse_change_by_name,
-            fg_color="#E2EFF8",
-            selected_color="#219EBC",
-            selected_hover_color="#1976A1",
-            unselected_color="#E2EFF8",
-            unselected_hover_color="#C5DFF0",
-            text_color="#2D3748",
+            fg_color=WH_SEG_FG,
+            selected_color=AZUL_CERULEO,
+            selected_hover_color=HOVER_CERULEO,
+            unselected_color=WH_SEG_FG,
+            unselected_hover_color=WH_SEG_HOVER,
+            text_color=GRIS_AZULADO,
             font=ctk.CTkFont(size=13, weight="bold"),
             height=34,
         )
@@ -86,7 +87,7 @@ class App(ctk.CTk):
         self._wh_seg.set(wh_names[0] if wh_names else "")
 
         # Línea separadora inferior
-        ctk.CTkFrame(parent, height=2, fg_color="#8ECAE6", corner_radius=0).grid(
+        ctk.CTkFrame(parent, height=2, fg_color=AZUL_CIELO, corner_radius=0).grid(
             row=0, column=0, sticky="sew"
         )
 
