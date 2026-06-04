@@ -309,13 +309,13 @@ def get_products_grouped(search="", status_filter="todos", warehouse_id=None):
                    COUNT(*) AS unit_count,
                    SUM(CASE WHEN p.status='disponible' THEN 1 ELSE 0 END) AS disponible_count,
                    MAX(p.supplier_id) AS supplier_id,
-                   COALESCE(sup.name,'N/A') AS supplier_name,
-                   COALESCE(p.unit,'und') AS unit
+                   COALESCE(MAX(sup.name),'N/A') AS supplier_name,
+                   MAX(COALESCE(p.unit,'und')) AS unit
             FROM products p
             LEFT JOIN suppliers sup ON p.supplier_id = sup.id
             WHERE {where}
-            GROUP BY p.name, p.brand, sup.name, p.unit
-            ORDER BY p.name, p.brand
+            GROUP BY p.name, COALESCE(p.brand,'')
+            ORDER BY p.name, COALESCE(p.brand,'')
             """,
             params,
         ).fetchall()
@@ -545,6 +545,21 @@ def update_product(
         conn.close()
 
 
+def update_product_unit(product_id, serial, mac, barcode, status):
+    """Actualiza los identificadores y estado de una unidad individual."""
+    conn = get_connection()
+    try:
+        conn.execute(
+            """UPDATE products SET serial=?, mac=?, barcode=?, status=?,
+                                 updated_at=datetime('now','localtime')
+               WHERE id=?""",
+            (serial or None, mac or None, barcode or None, status, product_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def update_product_group(old_name, old_brand, new_name, new_brand, supplier_id):
     """Actualiza nombre, marca y proveedor de todas las unidades de un grupo."""
     conn = get_connection()
@@ -618,6 +633,40 @@ def delete_product(product_id):
     finally:
         if conn:
             conn.close()
+
+
+def delete_product_group(name, brand):
+    """Elimina/desactiva todas las unidades de un grupo (name+brand).
+    Sin movimientos → DELETE físico. Con movimientos → status='inactivo'.
+    Retorna (eliminados: int, desactivados: int)."""
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            """SELECT p.id,
+                      (SELECT COUNT(*) FROM movements WHERE product_id = p.id) AS mov_count
+               FROM products p
+               WHERE p.name = ? AND COALESCE(p.brand,'') = ? AND p.status != 'inactivo'""",
+            (name, brand or ""),
+        ).fetchall()
+        eliminados = 0
+        desactivados = 0
+        for row in rows:
+            if row["mov_count"] == 0:
+                conn.execute("DELETE FROM products WHERE id=?", (row["id"],))
+                eliminados += 1
+            else:
+                conn.execute(
+                    "UPDATE products SET status='inactivo', updated_at=datetime('now','localtime') WHERE id=?",
+                    (row["id"],),
+                )
+                desactivados += 1
+        conn.commit()
+        return eliminados, desactivados
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        conn.close()
 
 
 # ── MOVEMENTS ─────────────────────────────────────────────────────────────────
