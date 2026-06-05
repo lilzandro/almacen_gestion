@@ -587,6 +587,7 @@ class ProductsView(ctk.CTkFrame):
             {
                 "name": common["name"],
                 "brand": common.get("brand", ""),
+                "barcode": common.get("barcode"),
                 "serial": item["serial"],
                 "mac": item["mac"],
                 "supplier_id": common.get("supplier_id"),
@@ -1313,6 +1314,7 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
             self.in_unidad.menu.configure(state="disabled")
         else:
             self.on_categoria_change(CATEGORIA_NOMBRES[0])
+        self.after(50, self._rebind_mousewheel)
         self.after(50, self.grab_set)
 
     # ── Cabecera azul marino con contador ────────────────────────────────────
@@ -1337,15 +1339,29 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
 
     # ── Cuerpo con scroll (3 secciones) ──────────────────────────────────────
     def _build_body(self):
-        body = ctk.CTkScrollableFrame(self, fg_color=V_BG)
-        body.pack(fill="both", expand=True)
-        body.columnconfigure(0, weight=1)
+        self._body = ctk.CTkScrollableFrame(self, fg_color=V_BG)
+        self._body.pack(fill="both", expand=True)
+        self._body.columnconfigure(0, weight=1)
 
-        self._build_seccion_basica(body)
-        self._divider(body)
-        self._build_seccion_existencias(body)
-        self._divider(body)
-        self._build_seccion_tecnica(body)
+        self._build_seccion_basica(self._body)
+        self._divider(self._body)
+        self._build_seccion_existencias(self._body)
+
+    def _rebind_mousewheel(self):
+        canvas = self._body._parent_canvas
+        def _on_mw(event):
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        def _on_mw_up(event):
+            canvas.yview_scroll(-1, "units")
+        def _on_mw_down(event):
+            canvas.yview_scroll(1, "units")
+        def _bind_children(w):
+            for child in w.winfo_children():
+                child.bind("<MouseWheel>", _on_mw)
+                child.bind("<Button-4>", _on_mw_up)
+                child.bind("<Button-5>", _on_mw_down)
+                _bind_children(child)
+        _bind_children(self._body)
 
     @staticmethod
     def _divider(parent):
@@ -1371,9 +1387,9 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
         self.in_nombre = LabeledEntry(sec, f, "Nombre del producto", required=True,
                                       placeholder="Router ONT Huawei…",
                                       hint="Ej: Router ONT Huawei HG8245H")
-        self.in_sku = LabeledEntry(sec, f, "Código interno / SKU", mono=True,
-                                   placeholder="RED-ONT-0042",
-                                   hint="Identificador único de almacén")
+        self.in_barcode = LabeledEntry(sec, f, "Código de barras", mono=True,
+                                       placeholder="RED-ONT-0042",
+                                       hint="Código de barras del producto")
         self.in_categoria = LabeledSelect(sec, f, "Categoría", CATEGORIA_NOMBRES,
                                           required=True, placeholder="Seleccionar categoría…",
                                           command=self.on_categoria_change)
@@ -1384,7 +1400,7 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
                                           placeholder="Sin proveedor")
 
         self._place(self.in_nombre, 1, 0)
-        self._place(self.in_sku, 1, 1)
+        self._place(self.in_barcode, 1, 1)
         self._place(self.in_categoria, 2, 0, span=2)
         self._place(self.in_marca, 3, 0)
         self._place(self.in_modelo, 3, 1)
@@ -1396,12 +1412,8 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
         f = self.fonts
         self.in_unidad = LabeledSelect(sec, f, "Unidad de medida",
                                        [u[1] for u in UNIDADES],
-                                       command=lambda _v: self.update_counter())
-        self.in_ubicacion = LabeledEntry(sec, f, "Ubicación física",
-                                         placeholder="Bodega Norte · Pasillo A · Estante 2",
-                                         hint="Bodega · Pasillo · Estante")
-        self._place(self.in_unidad, 1, 0)
-        self._place(self.in_ubicacion, 1, 1)
+                                       command=self._on_unidad_change)
+        self._place(self.in_unidad, 1, 0, span=2)
 
         ctk.CTkLabel(sec, text="Tipo de control de inventario", font=f["label"],
                      text_color=INK_2).grid(row=2, column=0, columnspan=2, sticky="w", pady=(2, 6))
@@ -1417,6 +1429,8 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
         for w in self.exist_dyn.winfo_children():
             w.destroy()
         self.serial_table = None
+        self.in_stock = None
+        self.in_minimo = None
         f = self.fonts
 
         if mode == CTRL_SERIE:
@@ -1427,7 +1441,7 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
                                             on_count_change=lambda _n: self.update_counter())
             self.serial_table.grid(row=1, column=0, columnspan=2, sticky="ew")
         else:
-            self.in_stock = LabeledEntry(self.exist_dyn, f, "Cantidad actual en stock",
+            self.in_stock = LabeledEntry(self.exist_dyn, f, self._stock_label(),
                                          numeric=True, mono=True, placeholder="Ej: 1500",
                                          on_change=self._on_stock_change)
             self.in_minimo = LabeledEntry(self.exist_dyn, f, "Punto de pedido (stock mínimo)",
@@ -1443,6 +1457,7 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
                                           text_color="#8a5212", justify="left", wraplength=560)
             self.alert_lbl.pack(anchor="w", padx=13, pady=10)
         self.update_counter()
+        self.after(10, self._rebind_mousewheel)
 
     def _on_stock_change(self):
         self.update_counter()
@@ -1465,63 +1480,6 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
         else:
             self.alert.grid_forget()
 
-    # ── Sección 3 — Ficha técnica y especificaciones ─────────────────────────
-    def _build_seccion_tecnica(self, parent):
-        sec = self._section(parent, 3, "Ficha técnica y especificaciones")
-        f = self.fonts
-        ctk.CTkLabel(sec, text="Descripción funcional", font=f["label"],
-                     text_color=INK_2).grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 6))
-        self.in_desc = ctk.CTkTextbox(sec, height=70, font=f["input"], fg_color=V_WHITE,
-                                      border_color=LINE, border_width=1, corner_radius=RADIUS_FIELD,
-                                      text_color=INK, wrap="word")
-        self.in_desc.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 16))
-
-        self.cat_badge = ctk.CTkLabel(sec, text="", font=f["hint"], text_color=INK_2)
-        self.cat_badge.grid(row=3, column=0, columnspan=2, sticky="w", pady=(0, 12))
-
-        self.specs_holder = ctk.CTkFrame(sec, fg_color="transparent")
-        self.specs_holder.grid(row=4, column=0, columnspan=2, sticky="ew")
-        self.specs_holder.columnconfigure((0, 1), weight=1, uniform="col")
-
-    def render_specs(self, specs):
-        for w in self.specs_holder.winfo_children():
-            w.destroy()
-        self.spec_widgets = {}
-        f = self.fonts
-        if not specs:
-            ctk.CTkLabel(self.specs_holder,
-                         text="Esta categoría no requiere especificaciones técnicas adicionales.",
-                         font=f["hint"], text_color=INK_3).grid(
-                row=0, column=0, columnspan=2, sticky="w")
-            return
-        r = 0
-        col = 0
-        for sp in specs:
-            span = 2 if sp["type"] == "chips" else 1
-            if sp["type"] == "select":
-                place = val = LabeledSelect(self.specs_holder, f, sp["label"], sp["options"])
-            elif sp["type"] in ("chips", "seg"):
-                place = ctk.CTkFrame(self.specs_holder, fg_color="transparent")
-                ctk.CTkLabel(place, text=sp["label"], font=f["label"], text_color=INK_2,
-                             anchor="w").pack(anchor="w", pady=(0, 6))
-                val = (ChipGroup(place, f, sp["options"]) if sp["type"] == "chips"
-                       else SegSingle(place, f, sp["options"]))
-                val.pack(anchor="w", fill="x")
-            else:
-                place = val = LabeledEntry(self.specs_holder, f, sp["label"],
-                                           placeholder=sp.get("placeholder", ""), mono=sp.get("mono", False))
-            if span == 2:
-                col = 0
-                place.grid(row=r, column=0, columnspan=2, sticky="ew", pady=(0, 14))
-                r += 1
-            else:
-                padx = (0, 9) if col == 0 else (9, 0)
-                place.grid(row=r, column=col, sticky="ew", padx=padx, pady=(0, 14))
-                col += 1
-                if col > 1:
-                    col = 0; r += 1
-            self.spec_widgets[sp["id"]] = val
-
     # ── Lógica de categoría ──────────────────────────────────────────────────
     def on_categoria_change(self, nombre):
         cfg = CATEGORIAS.get(nombre)
@@ -1531,8 +1489,6 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
         self.in_unidad.set(UNIDAD_LABEL[cfg["unidad"]])
         self.inv_toggle.set(cfg["control"])
         self.set_control(cfg["control"])
-        self.cat_badge.configure(text=f"Especificaciones para  ·  {nombre}")
-        self.render_specs(cfg["specs"])
 
     # ── Contador de cabecera ─────────────────────────────────────────────────
     def _unidad_code(self):
@@ -1541,6 +1497,15 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
             if lab == label:
                 return code
         return "und"
+
+    def _stock_label(self):
+        code = self._unidad_code()
+        return f"Cantidad ({code})"
+
+    def _on_unidad_change(self, _v):
+        self.update_counter()
+        if self.control_mode == CTRL_CANTIDAD:
+            self.set_control(CTRL_CANTIDAD)
 
     def update_counter(self):
         if self.control_mode == CTRL_SERIE and self.serial_table is not None:
@@ -1552,6 +1517,7 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
             val = stock.get() if stock else ""
             self.counter_num.configure(text=val if val != "" else "0")
             self.counter_unit.configure(text=self._unidad_code().upper())
+        self.after(10, self._rebind_mousewheel)
 
     # ── Footer ───────────────────────────────────────────────────────────────
     def _build_footer(self):
@@ -1575,16 +1541,13 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
     def recolectar(self):
         data = {
             "nombre": self.in_nombre.get() if not self._prefill.get("name") else self._prefill["name"],
-            "sku": self.in_sku.get(),
+            "barcode": self.in_barcode.get(),
             "categoria": self.in_categoria.get(),
             "marca": self.in_marca.get() if not self._prefill.get("brand") else self._prefill["brand"],
             "modelo": self.in_modelo.get(),
             "proveedor": self.in_proveedor.get(),
             "unidad": self._unidad_code(),
-            "ubicacion": self.in_ubicacion.get(),
             "control": self.control_mode,
-            "descripcion": self.in_desc.get("1.0", "end").strip(),
-            "specs": {sid: w.get() for sid, w in self.spec_widgets.items()},
         }
         if self.control_mode == CTRL_SERIE and self.serial_table:
             data["equipos"] = [
@@ -1638,37 +1601,50 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
             common = {
                 "name": nombre,
                 "brand": marca,
+                "barcode": data.get("barcode") or None,
                 "supplier_id": supplier_id,
                 "unit": data.get("unidad", "und"),
             }
             self.destroy()
             self.on_save(common, items)
         else:
+            import sqlite3
             try:
                 stock_val = int(data.get("stock") or 0)
             except (ValueError, TypeError):
                 stock_val = 0
-            pid = create_product(
-                nombre,
-                data.get("sku") or None,
-                marca,
-                "",
-                "",
-                stock_val,
-                supplier_id,
-                data.get("unidad", "und"),
-                warehouse_id=wh_id,
-            )
-            if stock_val > 0:
-                create_movement(
-                    "entrada",
-                    pid,
-                    None,
-                    self.products_view.current_user["id"],
+            try:
+                pid = create_product(
+                    nombre,
+                    data.get("barcode") or None,
+                    marca,
+                    "",
+                    "",
                     stock_val,
-                    "Registro inicial",
+                    supplier_id,
+                    data.get("unidad", "und"),
                     warehouse_id=wh_id,
                 )
+            except sqlite3.IntegrityError as e:
+                if "barcode" in str(e):
+                    MessageDialog(self, "Error", "El código de barras ya existe en otro producto.", is_error=True)
+                else:
+                    MessageDialog(self, "Error", f"Error al guardar: {e}", is_error=True)
+                return
+            if stock_val > 0:
+                try:
+                    create_movement(
+                        "entrada",
+                        pid,
+                        None,
+                        self.products_view.current_user["id"],
+                        stock_val,
+                        "Registro inicial",
+                        warehouse_id=wh_id,
+                    )
+                except Exception as e:
+                    MessageDialog(self, "Error", f"Error al registrar movimiento: {e}", is_error=True)
+                    return
             self.destroy()
             self.products_view.refresh(force=True)
             MessageDialog(

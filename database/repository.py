@@ -33,7 +33,7 @@ def bulk_create_products(items, user_id, warehouse_id=None):
     """
     Inserta N productos + sus movimientos de entrada en UNA sola transacción.
 
-    items: lista de dicts con claves: name, brand, serial, mac, supplier_id, unit
+    items: lista de dicts con claves: name, brand, serial, mac, supplier_id, unit[, barcode]
     Retorna: (ok: int, duplicados: list[str])
     """
     conn = get_connection()
@@ -50,7 +50,7 @@ def bulk_create_products(items, user_id, warehouse_id=None):
                        VALUES (?,?,?,?,?,0,?,?,?)""",
                     (
                         item["name"],
-                        None,
+                        item.get("barcode"),
                         item.get("brand", ""),
                         item.get("serial", ""),
                         item.get("mac", ""),
