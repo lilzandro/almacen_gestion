@@ -310,7 +310,8 @@ def get_products_grouped(search="", status_filter="todos", warehouse_id=None):
                    SUM(CASE WHEN p.status='disponible' THEN 1 ELSE 0 END) AS disponible_count,
                    MAX(p.supplier_id) AS supplier_id,
                    COALESCE(MAX(sup.name),'N/A') AS supplier_name,
-                   MAX(COALESCE(p.unit,'und')) AS unit
+                   MAX(COALESCE(p.unit,'und')) AS unit,
+                    SUM(p.quantity) AS total_quantity
             FROM products p
             LEFT JOIN suppliers sup ON p.supplier_id = sup.id
             WHERE {where}
