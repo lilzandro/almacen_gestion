@@ -69,6 +69,46 @@ from database.repository import (
     create_movement,
     bulk_create_products,
 )
+from ventanaejemplo.theme import (
+    make_fonts,
+    BG as V_BG,
+    BG_2,
+    WHITE as V_WHITE,
+    NAVY as V_NAVY,
+    NAVY_2,
+    BLUE as V_BLUE,
+    BLUE_D,
+    BLUE_SOFT,
+    ORANGE as V_ORANGE,
+    ORANGE_D,
+    ORANGE_SOFT,
+    INK,
+    INK_2,
+    INK_3,
+    LINE,
+    LINE_2,
+    RADIUS_BTN,
+    RADIUS_FIELD,
+    BTN_H,
+    FIELD_H,
+)
+from ventanaejemplo.data import (
+    CATEGORIAS,
+    CATEGORIA_NOMBRES,
+    UNIDADES,
+    UNIDAD_LABEL,
+    CTRL_SERIE,
+    CTRL_CANTIDAD,
+)
+from ventanaejemplo.widgets import (
+    LabeledEntry,
+    LabeledSelect,
+    ChipGroup,
+    SegSingle,
+    InventoryToggle,
+    SerialTable,
+    section_header,
+)
 
 _PILL_COLORS = {
     "disponible": (DISPONIBLE_BG, DISPONIBLE_FG),
@@ -539,7 +579,7 @@ class ProductsView(ctk.CTkFrame):
         self.refresh(force=True)
 
     def _add_dialog(self):
-        _ProductDialog(self, "Registrar Producto", on_save=self._do_bulk_add)
+        _RegistrarProductoDialog(self, on_save=self._do_bulk_add, products_view=self)
 
     def _do_bulk_add(self, common, items):
         wh_id = self.app.current_warehouse_id if self.app else None
@@ -977,6 +1017,7 @@ class _GroupEditDialog(ctk.CTkToplevel):
         self.resizable(False, False)
         self.configure(fg_color=BLANCO_CALIDO)
         self.transient(parent)
+        self.products_view = parent
         self.on_save = on_save
         self.on_add_more = on_add_more
         self.on_delete = on_delete
@@ -1152,10 +1193,10 @@ class _GroupEditDialog(ctk.CTkToplevel):
 
     def _open_add_more(self):
         g = self._group_data
-        _ProductDialog(
+        _RegistrarProductoDialog(
             self,
-            "Agregar Equipos",
             on_save=self.on_add_more,
+            products_view=self.products_view,
             prefill={
                 "name": g["name"],
                 "brand": g["brand"] or "",
@@ -1226,6 +1267,414 @@ class _BarcodeScanDialog(ctk.CTkToplevel):
         if barcode:
             self.destroy()
             self.on_scan(barcode)
+
+
+class _RegistrarProductoDialog(ctk.CTkToplevel):
+    def __init__(self, parent, on_save, prefill=None, products_view=None):
+        super().__init__(parent)
+        self.title("Registrar Producto")
+        self.geometry("1040x720")
+        self.minsize(860, 600)
+        self.configure(fg_color=V_BG)
+        self.transient(parent)
+        self.products_view = products_view or parent
+        self.on_save = on_save
+        self._prefill = prefill or {}
+
+        suppliers = get_all_suppliers()
+        self._supplier_names = ["Sin proveedor"] + [s["name"] for s in suppliers]
+        self._supplier_id_map = {s["name"]: s["id"] for s in suppliers}
+
+        self.fonts = make_fonts()
+        self.control_mode = CTRL_SERIE
+        self.spec_widgets = {}
+        self.serial_table = None
+
+        self._build_header()
+        self._build_footer()
+        self._build_body()
+
+        if prefill:
+            if prefill.get("name"):
+                self.in_nombre.set(prefill["name"])
+                self.in_nombre.entry.configure(state="disabled")
+            if prefill.get("brand"):
+                self.in_marca.set(prefill["brand"])
+                self.in_marca.entry.configure(state="disabled")
+            sup_name = next(
+                (n for n, sid in self._supplier_id_map.items()
+                 if sid == prefill.get("supplier_id")),
+                "Sin proveedor",
+            )
+            self.in_proveedor.set(sup_name)
+            self.in_proveedor.menu.configure(state="disabled")
+            self._locked_unit = prefill.get("unit", "und")
+            self.in_unidad.set(UNIDAD_LABEL.get(self._locked_unit, "Unidades (pieza)"))
+            self.in_unidad.menu.configure(state="disabled")
+        else:
+            self.on_categoria_change(CATEGORIA_NOMBRES[0])
+        self.after(50, self.grab_set)
+
+    # ── Cabecera azul marino con contador ────────────────────────────────────
+    def _build_header(self):
+        h = ctk.CTkFrame(self, fg_color=V_NAVY, corner_radius=0, height=72)
+        h.pack(fill="x", side="top"); h.pack_propagate(False)
+        left = ctk.CTkFrame(h, fg_color="transparent")
+        left.pack(side="left", padx=24, pady=14)
+        ctk.CTkLabel(left, text="INVENTARIO · NUEVO ÍTEM", font=self.fonts["eyebrow"],
+                     text_color="#86a7c9").pack(anchor="w")
+        ctk.CTkLabel(left, text="REGISTRAR PRODUCTO", font=self.fonts["title"],
+                     text_color=V_WHITE).pack(anchor="w")
+
+        pill = ctk.CTkFrame(h, fg_color=NAVY_2, corner_radius=999)
+        pill.pack(side="right", padx=24)
+        self.counter_num = ctk.CTkLabel(pill, text="1", font=self.fonts["counter"],
+                                        text_color=V_WHITE)
+        self.counter_num.pack(side="left", padx=(14, 6), pady=7)
+        self.counter_unit = ctk.CTkLabel(pill, text="EQUIPO", font=self.fonts["eyebrow"],
+                                         text_color="#9fbcd8")
+        self.counter_unit.pack(side="left", padx=(0, 14))
+
+    # ── Cuerpo con scroll (3 secciones) ──────────────────────────────────────
+    def _build_body(self):
+        body = ctk.CTkScrollableFrame(self, fg_color=V_BG)
+        body.pack(fill="both", expand=True)
+        body.columnconfigure(0, weight=1)
+
+        self._build_seccion_basica(body)
+        self._divider(body)
+        self._build_seccion_existencias(body)
+        self._divider(body)
+        self._build_seccion_tecnica(body)
+
+    @staticmethod
+    def _divider(parent):
+        ctk.CTkFrame(parent, fg_color=LINE_2, height=1).pack(fill="x", padx=24)
+
+    def _section(self, parent, num, title):
+        sec = ctk.CTkFrame(parent, fg_color="transparent")
+        sec.pack(fill="x", padx=24, pady=22)
+        sec.columnconfigure((0, 1), weight=1, uniform="col")
+        section_header(sec, self.fonts, num, title).grid(
+            row=0, column=0, columnspan=2, sticky="w", pady=(0, 16))
+        return sec
+
+    @staticmethod
+    def _place(widget, row, col, span=1, pady=(0, 14)):
+        padx = 0 if span == 2 else ((0, 9) if col == 0 else (9, 0))
+        widget.grid(row=row, column=col, columnspan=span, sticky="ew", padx=padx, pady=pady)
+
+    # ── Sección 1 — Identificación e información básica ──────────────────────
+    def _build_seccion_basica(self, parent):
+        sec = self._section(parent, 1, "Identificación e información básica")
+        f = self.fonts
+        self.in_nombre = LabeledEntry(sec, f, "Nombre del producto", required=True,
+                                      placeholder="Router ONT Huawei…",
+                                      hint="Ej: Router ONT Huawei HG8245H")
+        self.in_sku = LabeledEntry(sec, f, "Código interno / SKU", mono=True,
+                                   placeholder="RED-ONT-0042",
+                                   hint="Identificador único de almacén")
+        self.in_categoria = LabeledSelect(sec, f, "Categoría", CATEGORIA_NOMBRES,
+                                          required=True, placeholder="Seleccionar categoría…",
+                                          command=self.on_categoria_change)
+        self.in_marca = LabeledEntry(sec, f, "Marca / Fabricante",
+                                     placeholder="Huawei, Cisco, Furukawa…")
+        self.in_modelo = LabeledEntry(sec, f, "Modelo", mono=True, placeholder="HG8245H")
+        self.in_proveedor = LabeledSelect(sec, f, "Proveedor", self._supplier_names,
+                                          placeholder="Sin proveedor")
+
+        self._place(self.in_nombre, 1, 0)
+        self._place(self.in_sku, 1, 1)
+        self._place(self.in_categoria, 2, 0, span=2)
+        self._place(self.in_marca, 3, 0)
+        self._place(self.in_modelo, 3, 1)
+        self._place(self.in_proveedor, 4, 0, span=2, pady=(0, 0))
+
+    # ── Sección 2 — Control de existencias y trazabilidad ────────────────────
+    def _build_seccion_existencias(self, parent):
+        sec = self._section(parent, 2, "Control de existencias y trazabilidad")
+        f = self.fonts
+        self.in_unidad = LabeledSelect(sec, f, "Unidad de medida",
+                                       [u[1] for u in UNIDADES],
+                                       command=lambda _v: self.update_counter())
+        self.in_ubicacion = LabeledEntry(sec, f, "Ubicación física",
+                                         placeholder="Bodega Norte · Pasillo A · Estante 2",
+                                         hint="Bodega · Pasillo · Estante")
+        self._place(self.in_unidad, 1, 0)
+        self._place(self.in_ubicacion, 1, 1)
+
+        ctk.CTkLabel(sec, text="Tipo de control de inventario", font=f["label"],
+                     text_color=INK_2).grid(row=2, column=0, columnspan=2, sticky="w", pady=(2, 6))
+        self.inv_toggle = InventoryToggle(sec, f, command=self.set_control)
+        self.inv_toggle.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(0, 14))
+
+        self.exist_dyn = ctk.CTkFrame(sec, fg_color="transparent")
+        self.exist_dyn.grid(row=4, column=0, columnspan=2, sticky="ew")
+        self.exist_dyn.columnconfigure((0, 1), weight=1, uniform="col")
+
+    def set_control(self, mode):
+        self.control_mode = mode
+        for w in self.exist_dyn.winfo_children():
+            w.destroy()
+        self.serial_table = None
+        f = self.fonts
+
+        if mode == CTRL_SERIE:
+            lbl = ctk.CTkLabel(self.exist_dyn, text="Equipos / unidades a registrar",
+                               font=f["label"], text_color=INK_2)
+            lbl.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 6))
+            self.serial_table = SerialTable(self.exist_dyn, f,
+                                            on_count_change=lambda _n: self.update_counter())
+            self.serial_table.grid(row=1, column=0, columnspan=2, sticky="ew")
+        else:
+            self.in_stock = LabeledEntry(self.exist_dyn, f, "Cantidad actual en stock",
+                                         numeric=True, mono=True, placeholder="Ej: 1500",
+                                         on_change=self._on_stock_change)
+            self.in_minimo = LabeledEntry(self.exist_dyn, f, "Punto de pedido (stock mínimo)",
+                                          numeric=True, mono=True, placeholder="Ej: 300",
+                                          on_change=self._on_stock_change,
+                                          hint="Dispara la alerta de reposición para los técnicos.")
+            self._place(self.in_stock, 0, 0)
+            self._place(self.in_minimo, 0, 1)
+            self.alert = ctk.CTkFrame(self.exist_dyn, fg_color=ORANGE_SOFT,
+                                      border_color="#f3dcc1", border_width=1,
+                                      corner_radius=RADIUS_FIELD)
+            self.alert_lbl = ctk.CTkLabel(self.alert, text="", font=f["hint"],
+                                          text_color="#8a5212", justify="left", wraplength=560)
+            self.alert_lbl.pack(anchor="w", padx=13, pady=10)
+        self.update_counter()
+
+    def _on_stock_change(self):
+        self.update_counter()
+        self._check_alert()
+
+    def _check_alert(self):
+        if self.control_mode != CTRL_CANTIDAD:
+            return
+        s, m = self.in_stock.get(), self.in_minimo.get()
+        try:
+            bajo = s != "" and m != "" and float(s) <= float(m)
+        except ValueError:
+            bajo = False
+        if bajo:
+            unidad = self._unidad_code()
+            self.alert_lbl.configure(
+                text=f"⚠  Por debajo del punto de pedido. El stock ({s} {unidad}) es igual o "
+                     f"menor al mínimo definido. Se recomienda solicitar reposición.")
+            self.alert.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 0))
+        else:
+            self.alert.grid_forget()
+
+    # ── Sección 3 — Ficha técnica y especificaciones ─────────────────────────
+    def _build_seccion_tecnica(self, parent):
+        sec = self._section(parent, 3, "Ficha técnica y especificaciones")
+        f = self.fonts
+        ctk.CTkLabel(sec, text="Descripción funcional", font=f["label"],
+                     text_color=INK_2).grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 6))
+        self.in_desc = ctk.CTkTextbox(sec, height=70, font=f["input"], fg_color=V_WHITE,
+                                      border_color=LINE, border_width=1, corner_radius=RADIUS_FIELD,
+                                      text_color=INK, wrap="word")
+        self.in_desc.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 16))
+
+        self.cat_badge = ctk.CTkLabel(sec, text="", font=f["hint"], text_color=INK_2)
+        self.cat_badge.grid(row=3, column=0, columnspan=2, sticky="w", pady=(0, 12))
+
+        self.specs_holder = ctk.CTkFrame(sec, fg_color="transparent")
+        self.specs_holder.grid(row=4, column=0, columnspan=2, sticky="ew")
+        self.specs_holder.columnconfigure((0, 1), weight=1, uniform="col")
+
+    def render_specs(self, specs):
+        for w in self.specs_holder.winfo_children():
+            w.destroy()
+        self.spec_widgets = {}
+        f = self.fonts
+        if not specs:
+            ctk.CTkLabel(self.specs_holder,
+                         text="Esta categoría no requiere especificaciones técnicas adicionales.",
+                         font=f["hint"], text_color=INK_3).grid(
+                row=0, column=0, columnspan=2, sticky="w")
+            return
+        r = 0
+        col = 0
+        for sp in specs:
+            span = 2 if sp["type"] == "chips" else 1
+            if sp["type"] == "select":
+                place = val = LabeledSelect(self.specs_holder, f, sp["label"], sp["options"])
+            elif sp["type"] in ("chips", "seg"):
+                place = ctk.CTkFrame(self.specs_holder, fg_color="transparent")
+                ctk.CTkLabel(place, text=sp["label"], font=f["label"], text_color=INK_2,
+                             anchor="w").pack(anchor="w", pady=(0, 6))
+                val = (ChipGroup(place, f, sp["options"]) if sp["type"] == "chips"
+                       else SegSingle(place, f, sp["options"]))
+                val.pack(anchor="w", fill="x")
+            else:
+                place = val = LabeledEntry(self.specs_holder, f, sp["label"],
+                                           placeholder=sp.get("placeholder", ""), mono=sp.get("mono", False))
+            if span == 2:
+                col = 0
+                place.grid(row=r, column=0, columnspan=2, sticky="ew", pady=(0, 14))
+                r += 1
+            else:
+                padx = (0, 9) if col == 0 else (9, 0)
+                place.grid(row=r, column=col, sticky="ew", padx=padx, pady=(0, 14))
+                col += 1
+                if col > 1:
+                    col = 0; r += 1
+            self.spec_widgets[sp["id"]] = val
+
+    # ── Lógica de categoría ──────────────────────────────────────────────────
+    def on_categoria_change(self, nombre):
+        cfg = CATEGORIAS.get(nombre)
+        if not cfg:
+            return
+        self.in_categoria.set(nombre)
+        self.in_unidad.set(UNIDAD_LABEL[cfg["unidad"]])
+        self.inv_toggle.set(cfg["control"])
+        self.set_control(cfg["control"])
+        self.cat_badge.configure(text=f"Especificaciones para  ·  {nombre}")
+        self.render_specs(cfg["specs"])
+
+    # ── Contador de cabecera ─────────────────────────────────────────────────
+    def _unidad_code(self):
+        label = self.in_unidad.get()
+        for code, lab in UNIDADES:
+            if lab == label:
+                return code
+        return "und"
+
+    def update_counter(self):
+        if self.control_mode == CTRL_SERIE and self.serial_table is not None:
+            n = self.serial_table.count()
+            self.counter_num.configure(text=str(n))
+            self.counter_unit.configure(text=("EQUIPO" if n == 1 else "EQUIPOS"))
+        else:
+            stock = getattr(self, "in_stock", None)
+            val = stock.get() if stock else ""
+            self.counter_num.configure(text=val if val != "" else "0")
+            self.counter_unit.configure(text=self._unidad_code().upper())
+
+    # ── Footer ───────────────────────────────────────────────────────────────
+    def _build_footer(self):
+        f = ctk.CTkFrame(self, fg_color=V_WHITE, corner_radius=0, height=72)
+        f.pack(fill="x", side="bottom"); f.pack_propagate(False)
+        ctk.CTkFrame(f, fg_color=LINE, height=1).pack(fill="x", side="top")
+        inner = ctk.CTkFrame(f, fg_color="transparent")
+        inner.pack(fill="both", expand=True, padx=24)
+        ctk.CTkLabel(inner, text="Desplázate para ver todas las secciones",
+                     font=self.fonts["hint"], text_color=INK_3).pack(side="left")
+        ctk.CTkButton(inner, text="✓ Guardar producto", font=self.fonts["btn"],
+                      height=BTN_H, corner_radius=RADIUS_BTN, fg_color=V_BLUE,
+                      hover_color=BLUE_D, text_color=V_WHITE,
+                      command=self.guardar).pack(side="right", padx=(12, 0), pady=14)
+        ctk.CTkButton(inner, text="✕ Cancelar", font=self.fonts["btn"], height=BTN_H,
+                      corner_radius=RADIUS_BTN, fg_color=V_WHITE, text_color=ORANGE_D,
+                      border_color="#f0d3b5", border_width=1, hover_color=ORANGE_SOFT,
+                      command=self.destroy).pack(side="right", pady=14)
+
+    # ── Acciones ─────────────────────────────────────────────────────────────
+    def recolectar(self):
+        data = {
+            "nombre": self.in_nombre.get() if not self._prefill.get("name") else self._prefill["name"],
+            "sku": self.in_sku.get(),
+            "categoria": self.in_categoria.get(),
+            "marca": self.in_marca.get() if not self._prefill.get("brand") else self._prefill["brand"],
+            "modelo": self.in_modelo.get(),
+            "proveedor": self.in_proveedor.get(),
+            "unidad": self._unidad_code(),
+            "ubicacion": self.in_ubicacion.get(),
+            "control": self.control_mode,
+            "descripcion": self.in_desc.get("1.0", "end").strip(),
+            "specs": {sid: w.get() for sid, w in self.spec_widgets.items()},
+        }
+        if self.control_mode == CTRL_SERIE and self.serial_table:
+            data["equipos"] = [
+                {"serial": r["serial"].get(), "mac": r["mac"].get(),
+                 "sin": r["chk_var"].get() == "on"}
+                for r in self.serial_table.rows]
+        else:
+            data["stock"] = getattr(self, "in_stock", None) and self.in_stock.get()
+            data["minimo"] = getattr(self, "in_minimo", None) and self.in_minimo.get()
+        return data
+
+    def guardar(self):
+        data = self.recolectar()
+        faltan = []
+        nombre = data.get("nombre") or (self._prefill.get("name") if self._prefill else "")
+        if not nombre:
+            faltan.append("Nombre")
+            self.in_nombre.entry.configure(border_color=V_ORANGE)
+        categoria = data.get("categoria", "")
+        if not categoria or categoria.startswith("Seleccionar"):
+            faltan.append("Categoría")
+        if faltan:
+            MessageDialog(self, "Campos obligatorios",
+                          "Completa los campos requeridos:\n• " + "\n• ".join(faltan))
+            return
+
+        if self._prefill and self._prefill.get("name"):
+            nombre = self._prefill["name"]
+        marca = data.get("marca") or (self._prefill.get("brand") if self._prefill else "") or ""
+        proveedor_text = data.get("proveedor", "Sin proveedor")
+        supplier_id = self._supplier_id_map.get(proveedor_text) if proveedor_text != "Sin proveedor" else None
+        wh_id = self.products_view.app.current_warehouse_id if self.products_view.app else None
+
+        if self.control_mode == CTRL_SERIE and self.serial_table:
+            items = []
+            seen = set()
+            for r in self.serial_table.rows:
+                serial = r["serial"].get().strip()
+                mac = r["mac"].get().strip()
+                if not serial and not mac:
+                    continue
+                if serial and serial in seen:
+                    MessageDialog(self, "Error", f"Serial duplicado: {serial}")
+                    return
+                if serial:
+                    seen.add(serial)
+                items.append({"serial": serial, "mac": mac.upper() if mac else ""})
+            if not items:
+                MessageDialog(self, "Aviso", "Agrega al menos un equipo con serial o MAC.")
+                return
+            common = {
+                "name": nombre,
+                "brand": marca,
+                "supplier_id": supplier_id,
+                "unit": data.get("unidad", "und"),
+            }
+            self.destroy()
+            self.on_save(common, items)
+        else:
+            try:
+                stock_val = int(data.get("stock") or 0)
+            except (ValueError, TypeError):
+                stock_val = 0
+            pid = create_product(
+                nombre,
+                data.get("sku") or None,
+                marca,
+                "",
+                "",
+                stock_val,
+                supplier_id,
+                data.get("unidad", "und"),
+                warehouse_id=wh_id,
+            )
+            if stock_val > 0:
+                create_movement(
+                    "entrada",
+                    pid,
+                    None,
+                    self.products_view.current_user["id"],
+                    stock_val,
+                    "Registro inicial",
+                    warehouse_id=wh_id,
+                )
+            self.destroy()
+            self.products_view.refresh(force=True)
+            MessageDialog(
+                self.products_view, "Éxito",
+                f"Producto '{nombre}' registrado con {stock_val} unidad(es)."
+            )
 
 
 class _ProductDialog(ctk.CTkToplevel):
