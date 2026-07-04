@@ -24,9 +24,20 @@ class App(ctk.CTk):
 
     def _on_login(self, user):
         self.current_user = user
+        self._login.destroy()
+
+        overlay = ctk.CTkFrame(self, fg_color=BLANCO_CALIDO)
+        overlay.place(relwidth=1, relheight=1)
+        ctk.CTkLabel(
+            overlay, text="Cargando...",
+            font=ctk.CTkFont(size=26, weight="bold"),
+            text_color=AZUL_NOCHE,
+        ).place(relx=0.5, rely=0.5, anchor="center")
+        self.update_idletasks()
+
+        # Construir interfaz post-login
         self._warehouses = get_all_warehouses()
         self.current_warehouse_id = self._warehouses[0]["id"] if self._warehouses else None
-        self._login.destroy()
 
         self._sidebar = Sidebar(
             self,
@@ -36,7 +47,6 @@ class App(ctk.CTk):
         )
         self._sidebar.pack(side="left", fill="y")
 
-        # Panel derecho: top bar + contenido
         right = ctk.CTkFrame(self, fg_color="transparent")
         right.pack(side="right", fill="both", expand=True)
         right.grid_rowconfigure(1, weight=1)
@@ -48,6 +58,9 @@ class App(ctk.CTk):
         self._content.grid(row=1, column=0, sticky="nsew")
         self._content.grid_rowconfigure(0, weight=1)
         self._content.grid_columnconfigure(0, weight=1)
+
+        # Destruir overlay después de que el dashboard haya terminado su carga inicial
+        self.after(100, overlay.destroy)
 
     def _build_warehouse_bar(self, parent):
         bar = ctk.CTkFrame(parent, fg_color=BLANCO_CALIDO, height=54, corner_radius=0)

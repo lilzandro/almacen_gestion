@@ -22,11 +22,13 @@ def _invalidate(key):
 
 
 def get_all_warehouses():
-    conn = get_connection()
-    try:
-        return conn.execute("SELECT * FROM warehouses ORDER BY id").fetchall()
-    finally:
-        conn.close()
+    def _fetch():
+        conn = get_connection()
+        try:
+            return conn.execute("SELECT * FROM warehouses ORDER BY id").fetchall()
+        finally:
+            conn.close()
+    return _cached("warehouses", _fetch)
 
 
 def bulk_create_products(items, user_id, warehouse_id=None):
@@ -337,7 +339,8 @@ def get_units_by_model(name, brand, warehouse_id=None):
         rows = conn.execute(
             f"""
             SELECT p.id, p.serial, p.mac, p.status, p.barcode,
-                   COALESCE(p.unit,'und') AS unit, p.created_at,
+                   COALESCE(p.unit,'und') AS unit,
+                   COALESCE(p.quantity, 0) AS quantity,
                    p.created_at
             FROM products p
             WHERE p.name = ? AND COALESCE(p.brand,'') = ?
@@ -757,5 +760,48 @@ def get_movement_counts():
             FROM movements
         """).fetchone()
         return dict(row)
+    finally:
+        conn.close()
+
+
+def get_dashboard_stats():
+    """Obtiene conteos de productos, movimientos y movimientos recientes
+    en una sola conexión a la base de datos."""
+    conn = get_connection()
+    try:
+        product_row = conn.execute("""
+            SELECT COUNT(*) total,
+                   COALESCE(SUM(quantity), 0) disponible,
+                   COALESCE(SUM(quantity <= 0), 0) sin_stock,
+                   COALESCE(SUM(status='inactivo'), 0) inactivo
+            FROM products
+        """).fetchone()
+
+        movement_row = conn.execute("""
+            SELECT
+                COALESCE(SUM(type='entrada'), 0) entrada,
+                COALESCE(SUM(type='salida'), 0) salida,
+                COALESCE(SUM(type='devolucion'), 0) devolucion,
+                COALESCE(SUM(type='asignacion'), 0) asignacion
+            FROM movements
+        """).fetchone()
+
+        movements = conn.execute("""
+            SELECT m.id, m.type, m.timestamp, m.quantity,
+                   p.name || ' (' || COALESCE(p.barcode, p.serial, '') || ')' AS product,
+                   COALESCE(e.name, '-') AS employee,
+                   u.username AS registered_by, m.notes
+            FROM movements m
+            JOIN products p ON m.product_id = p.id
+            LEFT JOIN employees e ON m.employee_id = e.id
+            JOIN users u ON m.user_id = u.id
+            ORDER BY m.id DESC LIMIT 50
+        """).fetchall()
+
+        return {
+            "product_counts": dict(product_row),
+            "movement_counts": dict(movement_row),
+            "recent_movements": movements,
+        }
     finally:
         conn.close()

@@ -137,15 +137,17 @@ _DETAIL_COLS = {
         ("Estado", 0, (8, 8)),
     ],
     "m": [
-        ("Serial / Rollo", 200, (16, 8)),
+        ("Serial", 200, (16, 8)),
         ("Código", 160, (8, 8)),
         ("Registro", 140, (8, 8)),
+        ("Metros", 80, (8, 8)),
         ("Estado", 0, (8, 8)),
     ],
     "caja": [
-        ("Serial / Lote", 200, (16, 8)),
+        ("Serial", 200, (16, 8)),
         ("Código", 160, (8, 8)),
         ("Registro", 140, (8, 8)),
+        ("Caja", 80, (8, 8)),
         ("Estado", 0, (8, 8)),
     ],
 }
@@ -437,7 +439,7 @@ class ProductsView(ctk.CTkFrame):
         )
         container.pack(fill="x", pady=(0, 2), after=group_row)
 
-        cols = _DETAIL_COLS.get(unit_code, _DETAIL_COLS["und"])
+        cols = list(_DETAIL_COLS.get(unit_code, _DETAIL_COLS["und"]))
         sub_hdr = ctk.CTkFrame(
             container, fg_color=FONDO_SUBHEADER, height=26, corner_radius=0
         )
@@ -751,11 +753,14 @@ class _ChildRow(ctk.CTkFrame):
         # Serial siempre primero (ancho según definición de columna)
         if self._unit_code == "und":
             sw, spx = 180, (16, 8)
+            display_text = self.unit["serial"]
         else:
             sw, spx = 200, (16, 8)
+            # Para "m" y "caja": mostrar serial, o barcode como respaldo
+            display_text = self.unit["serial"] or self.unit["barcode"]
         ctk.CTkLabel(
             self,
-            text=_trunc(self.unit["serial"], 18),
+            text=_trunc(display_text, 18),
             width=sw,
             font=ctk.CTkFont(size=13),
             text_color=GRIS_AZULADO,
@@ -798,6 +803,18 @@ class _ChildRow(ctk.CTkFrame):
             text_color=TEXTO_SECUNDARIO,
             anchor="w",
         ).pack(side="left", padx=(8, 8))
+        if self._unit_code == "m":
+            qty = int(self.unit["quantity"] or 0)
+            ctk.CTkLabel(
+                self, text=f"{qty} m", width=80,
+                font=ctk.CTkFont(size=13), text_color=GRIS_AZULADO, anchor="w",
+            ).pack(side="left", padx=(8, 8))
+        elif self._unit_code == "caja":
+            qty = int(self.unit["quantity"] or 0)
+            ctk.CTkLabel(
+                self, text=str(qty), width=80,
+                font=ctk.CTkFont(size=13), text_color=GRIS_AZULADO, anchor="w",
+            ).pack(side="left", padx=(8, 8))
         _StatusPill(self, self.unit["status"]).pack(side="left", padx=8)
 
         def _do_edit():
@@ -1480,17 +1497,32 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
         f = self.fonts
 
         if mode == CTRL_SERIE:
-            lbl = ctk.CTkLabel(self.exist_dyn, text="Equipos / unidades a registrar",
+            categoria = self.in_categoria.get()
+            show_mac = (categoria != "Herramientas")
+            code = self._unidad_code()
+            if code == "m":
+                label_text = "Rollos a registrar"
+            elif code == "caja":
+                label_text = "Lotes a registrar"
+            else:
+                label_text = "Equipos / unidades a registrar"
+            lbl = ctk.CTkLabel(self.exist_dyn, text=label_text,
                                font=f["label"], text_color=INK_2)
             lbl.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 6))
             self.serial_table = SerialTable(self.exist_dyn, f,
-                                            on_count_change=lambda _n: self.update_counter())
+                                            on_count_change=lambda _n: self.update_counter(),
+                                            show_mac=show_mac)
             self.serial_table.grid(row=1, column=0, columnspan=2, sticky="ew")
         else:
+            self.in_serial_stock = LabeledEntry(
+                self.exist_dyn, f, "Serial", mono=True,
+                placeholder="SN-XXXXXXXXXX",
+            )
+            self._place(self.in_serial_stock, 0, 0, span=2)
             self.in_stock = LabeledEntry(self.exist_dyn, f, self._stock_label(),
                                          numeric=True, mono=True, placeholder="Ej: 1500",
                                          on_change=self.update_counter)
-            self._place(self.in_stock, 0, 0, span=2)
+            self._place(self.in_stock, 1, 0, span=2)
         self.update_counter()
         self.after(10, self._rebind_mousewheel)
 
@@ -1565,11 +1597,13 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
         }
         if self.control_mode == CTRL_SERIE and self.serial_table:
             data["equipos"] = [
-                {"serial": r["serial"].get(), "mac": r["mac"].get(),
+                {"serial": r["serial"].get(),
+                 "mac": (r.get("mac") and r["mac"].get()) or "",
                  "sin": r["chk_var"].get() == "on"}
                 for r in self.serial_table.rows]
         else:
             data["stock"] = getattr(self, "in_stock", None) and self.in_stock.get()
+            data["serial"] = getattr(self, "in_serial_stock", None) and self.in_serial_stock.get().strip() or ""
         return data
 
     def guardar(self):
@@ -1611,7 +1645,7 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
             seen = set()
             for r in self.serial_table.rows:
                 serial = r["serial"].get().strip()
-                mac = r["mac"].get().strip()
+                mac = (r.get("mac") and r["mac"].get().strip()) or ""
                 if not serial and not mac:
                     continue
                 if serial and serial in seen:
@@ -1653,6 +1687,7 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
                 print(f"  Ya existen: {_existing[0]} fila(s) con quantity total={_existing[1]}")
             finally:
                 _conn.close()
+            print(f"  Serial:      {data.get('serial', '—') or '—'}")
             print(f"  Stock:       {stock_val}")
             print(f"  → Creando producto en DB…")
             try:
@@ -1660,7 +1695,7 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
                     nombre,
                     data.get("barcode") or None,
                     marca,
-                    "",
+                    data.get("serial", ""),
                     "",
                     0,
                     supplier_id,

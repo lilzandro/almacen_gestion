@@ -145,6 +145,9 @@ def make_dashboard_movements_list(parent, movements_data, bg_color="#FFFFFF"):
 
     for i, movement in enumerate(movements_data):
         create_movement_card(scrollable_frame, movement, i)
+        # Dar respiro a la UI cada 10 tarjetas
+        if i > 0 and i % 10 == 0:
+            parent.update_idletasks()
 
     return container
 

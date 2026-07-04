@@ -84,16 +84,21 @@ class MovementsView(ctk.CTkFrame):
         self._type_filter = ctk.StringVar(value="todos")
         self._type_btns = {}
         type_defs = [
-            ("todos",      "Todos",       AZUL_MARINO, AZUL_NOCHE),
-            ("entrada",    "Entrada",     AZUL_CERULEO, HOVER_FILTRO_DISP),
-            ("salida",     "Salida",      NARANJA_SELECCION, HOVER_NARANJA_SEL),
-            ("devolucion", "Devolución",  AMARILLO_AMBAR, HOVER_AMBAR),
-            ("asignacion", "Asignación",  AZUL_CIELO, HOVER_MOV_ASIG),
+            ("todos", "Todos", AZUL_MARINO, AZUL_NOCHE),
+            ("entrada", "Entrada", AZUL_CERULEO, HOVER_FILTRO_DISP),
+            ("salida", "Salida", NARANJA_SELECCION, HOVER_NARANJA_SEL),
+            ("devolucion", "Devolución", AMARILLO_AMBAR, HOVER_AMBAR),
+            ("asignacion", "Asignación", AZUL_CIELO, HOVER_MOV_ASIG),
         ]
         for val, label, fg, hover in type_defs:
             btn = ctk.CTkButton(
-                sf, text=label, width=90, height=28,
-                fg_color=fg, hover_color=hover, text_color="white",
+                sf,
+                text=label,
+                width=90,
+                height=28,
+                fg_color=fg,
+                hover_color=hover,
+                text_color="white",
                 font=ctk.CTkFont(size=11),
                 command=lambda v=val: self.set_type_filter(v),
             )
@@ -126,20 +131,27 @@ class MovementsView(ctk.CTkFrame):
     def _update_type_buttons(self):
         active = self._type_filter.get()
         styles = {
-            "todos":      (AZUL_MARINO, AZUL_NOCHE),
-            "entrada":    (AZUL_CERULEO, HOVER_FILTRO_DISP),
-            "salida":     (NARANJA_SELECCION, HOVER_NARANJA_SEL),
+            "todos": (AZUL_MARINO, AZUL_NOCHE),
+            "entrada": (AZUL_CERULEO, HOVER_FILTRO_DISP),
+            "salida": (NARANJA_SELECCION, HOVER_NARANJA_SEL),
             "devolucion": (AMARILLO_AMBAR, HOVER_AMBAR),
             "asignacion": (AZUL_CIELO, HOVER_MOV_ASIG),
         }
         for val, btn in self._type_btns.items():
             fg, _ = styles[val]
             if val == active:
-                btn.configure(fg_color=fg, border_width=2, border_color="white",
-                              font=ctk.CTkFont(size=11, weight="bold"))
+                btn.configure(
+                    fg_color=fg,
+                    border_width=2,
+                    border_color="white",
+                    font=ctk.CTkFont(size=11, weight="bold"),
+                )
             else:
-                btn.configure(fg_color=fg, border_width=0,
-                              font=ctk.CTkFont(size=11, weight="normal"))
+                btn.configure(
+                    fg_color=fg,
+                    border_width=0,
+                    font=ctk.CTkFont(size=11, weight="normal"),
+                )
 
     def refresh(self):
         q = self._search.get() if hasattr(self, "_search") else ""
@@ -168,7 +180,9 @@ class MovementsView(ctk.CTkFrame):
 
     def _register_dialog(self):
         _MovementDialog(
-            self, current_user=self.current_user, on_save=lambda: self.refresh(),
+            self,
+            current_user=self.current_user,
+            on_save=lambda: self.refresh(),
             warehouse_id=self.app.current_warehouse_id if self.app else None,
         )
 
@@ -272,7 +286,7 @@ class _SearchableMultiSelect(ctk.CTkFrame):
                     text_color=TEXTO_MOV_FIELD,
                     fg_color=FONDO_MULTI_QTY,
                     font=ctk.CTkFont(size=14),
-                    placeholder_text="qty",
+                    placeholder_text="und",
                     placeholder_text_color=TEXTO_PLACEHOLDER_LOGIN,
                     border_width=1,
                 )
@@ -280,7 +294,10 @@ class _SearchableMultiSelect(ctk.CTkFrame):
                 qty_entry.pack(side="right", padx=5)
                 self._qty_entries[item_id] = qty_entry
                 ctk.CTkLabel(
-                    row, text="uds:", text_color=TEXTO_SECUNDARIO, font=ctk.CTkFont(size=12)
+                    row,
+                    text="uds:",
+                    text_color=TEXTO_SECUNDARIO,
+                    font=ctk.CTkFont(size=12),
                 ).pack(side="right", padx=(0, 2))
 
             self._checkboxes[item_id] = var
@@ -324,7 +341,6 @@ class _MovementDialog(ctk.CTkToplevel):
         self.transient(parent)
         self.current_user = current_user
         self.on_save = on_save
-
 
         self._all_products = get_all_products(search="", include_inactive=False)
         self._employees = get_all_employees()

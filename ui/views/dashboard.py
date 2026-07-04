@@ -10,11 +10,7 @@ from ui.dashboard_widgets import (
     make_dashboard_movements_list,
     setup_dashboard_movements_style,
 )
-from database.repository import (
-    get_product_counts,
-    get_movement_counts,
-    get_all_movements,
-)
+from database.repository import get_dashboard_stats
 
 
 class DashboardView(ctk.CTkFrame):
@@ -217,57 +213,50 @@ class DashboardView(ctk.CTkFrame):
         self.loading_indicator.grid_remove()
 
     def refresh(self):
-        # Implementar throttling para evitar refreshes demasiado frecuentes
         import time
-
-        current_time = time.time() * 1000  # Convertir a milisegundos
-
-        # Si ha pasado menos tiempo que el intervalo mínimo, salir
-        if current_time - self.last_refresh_time < self.min_refresh_interval:
+        current_ms = time.time() * 1000
+        if current_ms - self.last_refresh_time < self.min_refresh_interval:
             return
+        self.last_refresh_time = current_ms
 
-        self.last_refresh_time = current_time
+        # Placeholder inmediato — no bloquear la UI
+        for lbl in self._stat_vars.values():
+            lbl.configure(text="—")
+        self.movements_subheader.configure(text="Cargando...")
 
-        # Mostrar indicador de carga
+        # Cancelar carga previa pendiente, si existe
+        if hasattr(self, "_load_after_id") and self._load_after_id:
+            self.after_cancel(self._load_after_id)
+        self._load_after_id = self.after(10, self._load_data)
+
+    def _load_data(self):
+        """Fetch real data async (deferred via after). Runs off the critical path."""
         self.loading_indicator.grid()
-
-        # Forzar actualización de la UI para mostrar el indicador de carga inmediatamente
         self.update_idletasks()
-
         try:
-            # Obtener conteos de productos
-            product_counts = get_product_counts()
-            movement_counts = get_movement_counts()
+            stats = get_dashboard_stats()
+            product_counts = stats["product_counts"]
+            movement_counts = stats["movement_counts"]
+            movements = stats["recent_movements"]
 
-            # Map movement keys to stat keys
             movement_key_map = {
                 "entrada_count": "entrada",
                 "salida_count": "salida",
                 "devolucion_count": "devolucion",
             }
-
-            # Combinar ambos diccionarios
             counts = {**product_counts, **movement_counts}
-
             for key, lbl in self._stat_vars.items():
                 lookup_key = movement_key_map.get(key, key)
                 val = int(counts.get(lookup_key) or 0)
                 lbl.configure(text=str(val))
 
-            # Limpiar contenedor de movimientos anteriores, pero preservar el indicador de carga
             for widget in self.movements_content.winfo_children():
                 widget.destroy()
 
-            # Obtener datos de movimientos (solo los 50 más recientes para el dashboard)
-            movements = get_all_movements(limit=50)
-
-            # Crear nueva lista de movimientos
             make_dashboard_movements_list(self.movements_content, movements)
-
-            # Actualizar subheader con el conteo real
             self.movements_subheader.configure(
                 text=f"Mostrando {len(movements)} movimientos recientes"
             )
         finally:
-            # Ocultar indicador de carga (siempre se ejecuta, incluso si hay error)
             self.loading_indicator.grid_remove()
+            self._load_after_id = None
