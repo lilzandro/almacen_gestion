@@ -426,12 +426,29 @@ class ProductsView(ctk.CTkFrame):
         wh_id = self.app.current_warehouse_id if self.app else None
 
         if group_row.is_open:
-            self._open_group(group_row, g, wh_id)
+            # Cancelar apertura pendiente anterior
+            if hasattr(self, "_open_after_id") and self._open_after_id:
+                self.after_cancel(self._open_after_id)
+            # Cerrar otros grupos abiertos (rápido, solo destrucción)
+            for key in list(self._expanded.keys()):
+                if key != group_key:
+                    self._expanded.pop(key).destroy()
+            for child in self._scroll.winfo_children():
+                if hasattr(child, 'is_open') and child != group_row and child.is_open:
+                    child.is_open = False
+                    child.chevron.configure(text="▸")
+            # Diferir la creación de widgets para no bloquear la UI
+            self._open_after_id = self.after(
+                10, lambda gr=group_row, g=g, wh=wh_id: self._open_group(gr, g, wh)
+            )
         else:
             if group_key in self._expanded:
                 self._expanded.pop(group_key).destroy()
 
     def _open_group(self, group_row, g, wh_id):
+        self._open_after_id = None
+        if not group_row.is_open:
+            return
         group_key = f"{g['name']}__{g['brand']}"
         unit_code = dict(g).get("unit", "und")
         container = ctk.CTkFrame(
@@ -467,7 +484,7 @@ class ProductsView(ctk.CTkFrame):
 
         is_admin = self.current_user["role"] == "admin"
         units = get_units_by_model(g["name"], g["brand"], wh_id)
-        for u in units:
+        for i, u in enumerate(units):
             child = _ChildRow(
                 container,
                 u,
@@ -477,6 +494,8 @@ class ProductsView(ctk.CTkFrame):
                 on_delete=self._delete if is_admin else None,
             )
             child.pack(fill="x", padx=(64, 8), pady=1)
+            if i > 0 and i % 10 == 0:
+                container.update_idletasks()
 
         self._expanded[group_key] = container
 

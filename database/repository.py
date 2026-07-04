@@ -18,6 +18,12 @@ def _invalidate(key):
     _cache.pop(key, None)
 
 
+def _invalidate_prefix(prefix):
+    for key in list(_cache.keys()):
+        if isinstance(key, tuple) and key[0] == prefix:
+            _cache.pop(key, None)
+
+
 # ── WAREHOUSES ────────────────────────────────────────────────────────────────
 
 
@@ -78,6 +84,8 @@ def bulk_create_products(items, user_id, warehouse_id=None):
                 label = item.get("serial") or item.get("mac") or f"fila {ok + len(duplicados) + 1}"
                 duplicados.append(label)
         conn.commit()
+        _invalidate_prefix("units_by_model")
+        _invalidate_prefix("products_grouped")
     except Exception:
         conn.rollback()
         raise
@@ -291,68 +299,74 @@ def delete_vehicle(vehicle_id):
 
 def get_products_grouped(search="", status_filter="todos", warehouse_id=None):
     """Una fila por (name, brand): total de unidades, proveedor, estado dominante."""
-    conn = get_connection()
-    try:
-        q = f"%{search}%"
-        where = "(p.name LIKE ? OR p.brand LIKE ?)"
-        params = [q, q]
-        if status_filter == "disponible":
-            where += " AND p.status = 'disponible'"
-        elif status_filter == "no disponible":
-            where += " AND p.status = 'no disponible'"
-        else:
-            where += " AND p.status != 'inactivo'"
-        if warehouse_id is not None:
-            where += " AND p.warehouse_id = ?"
-            params.append(warehouse_id)
-        rows = conn.execute(
-            f"""
-            SELECT p.name, COALESCE(p.brand,'') AS brand,
-                   COUNT(*) AS unit_count,
-                   SUM(CASE WHEN p.status='disponible' THEN 1 ELSE 0 END) AS disponible_count,
-                   MAX(p.supplier_id) AS supplier_id,
-                   COALESCE(MAX(sup.name),'N/A') AS supplier_name,
-                   MAX(COALESCE(p.unit,'und')) AS unit,
-                    SUM(p.quantity) AS total_quantity
-            FROM products p
-            LEFT JOIN suppliers sup ON p.supplier_id = sup.id
-            WHERE {where}
-            GROUP BY p.name, COALESCE(p.brand,'')
-            ORDER BY p.name, COALESCE(p.brand,'')
-            """,
-            params,
-        ).fetchall()
-        return rows
-    finally:
-        conn.close()
+    key = ("products_grouped", search, status_filter, warehouse_id)
+    def _fetch():
+        conn = get_connection()
+        try:
+            q = f"%{search}%"
+            where = "(p.name LIKE ? OR p.brand LIKE ?)"
+            params = [q, q]
+            if status_filter == "disponible":
+                where += " AND p.status = 'disponible'"
+            elif status_filter == "no disponible":
+                where += " AND p.status = 'no disponible'"
+            else:
+                where += " AND p.status != 'inactivo'"
+            if warehouse_id is not None:
+                where += " AND p.warehouse_id = ?"
+                params.append(warehouse_id)
+            rows = conn.execute(
+                f"""
+                SELECT p.name, COALESCE(p.brand,'') AS brand,
+                       COUNT(*) AS unit_count,
+                       SUM(CASE WHEN p.status='disponible' THEN 1 ELSE 0 END) AS disponible_count,
+                       MAX(p.supplier_id) AS supplier_id,
+                       COALESCE(MAX(sup.name),'N/A') AS supplier_name,
+                       MAX(COALESCE(p.unit,'und')) AS unit,
+                        SUM(p.quantity) AS total_quantity
+                FROM products p
+                LEFT JOIN suppliers sup ON p.supplier_id = sup.id
+                WHERE {where}
+                GROUP BY p.name, COALESCE(p.brand,'')
+                ORDER BY p.name, COALESCE(p.brand,'')
+                """,
+                params,
+            ).fetchall()
+            return rows
+        finally:
+            conn.close()
+    return _cached(key, _fetch)
 
 
 def get_units_by_model(name, brand, warehouse_id=None):
     """Devuelve filas individuales para un modelo (name+brand)."""
-    conn = get_connection()
-    try:
-        params = [name, brand]
-        wh_filter = ""
-        if warehouse_id is not None:
-            wh_filter = "AND p.warehouse_id = ?"
-            params.append(warehouse_id)
-        rows = conn.execute(
-            f"""
-            SELECT p.id, p.serial, p.mac, p.status, p.barcode,
-                   COALESCE(p.unit,'und') AS unit,
-                   COALESCE(p.quantity, 0) AS quantity,
-                   p.created_at
-            FROM products p
-            WHERE p.name = ? AND COALESCE(p.brand,'') = ?
-              AND p.status != 'inactivo'
-              {wh_filter}
-            ORDER BY p.id
-            """,
-            params,
-        ).fetchall()
-        return rows
-    finally:
-        conn.close()
+    key = ("units_by_model", name, brand, warehouse_id)
+    def _fetch():
+        conn = get_connection()
+        try:
+            params = [name, brand]
+            wh_filter = ""
+            if warehouse_id is not None:
+                wh_filter = "AND p.warehouse_id = ?"
+                params.append(warehouse_id)
+            rows = conn.execute(
+                f"""
+                SELECT p.id, p.serial, p.mac, p.status, p.barcode,
+                       COALESCE(p.unit,'und') AS unit,
+                       COALESCE(p.quantity, 0) AS quantity,
+                       p.created_at
+                FROM products p
+                WHERE p.name = ? AND COALESCE(p.brand,'') = ?
+                  AND p.status != 'inactivo'
+                  {wh_filter}
+                ORDER BY p.id
+                """,
+                params,
+            ).fetchall()
+            return rows
+        finally:
+            conn.close()
+    return _cached(key, _fetch)
 
 
 def get_all_products(search="", include_inactive=False, status_filter="todos",
@@ -512,6 +526,8 @@ def create_product(
             ),
         )
         conn.commit()
+        _invalidate_prefix("units_by_model")
+        _invalidate_prefix("products_grouped")
         return cursor.lastrowid
     finally:
         conn.close()
@@ -545,6 +561,8 @@ def update_product(
             ),
         )
         conn.commit()
+        _invalidate_prefix("units_by_model")
+        _invalidate_prefix("products_grouped")
     finally:
         conn.close()
 
@@ -560,6 +578,8 @@ def update_product_unit(product_id, serial, mac, barcode, status):
             (serial or None, mac or None, barcode or None, status, product_id),
         )
         conn.commit()
+        _invalidate_prefix("units_by_model")
+        _invalidate_prefix("products_grouped")
     finally:
         conn.close()
 
@@ -575,6 +595,8 @@ def update_product_group(old_name, old_brand, new_name, new_brand, supplier_id):
             (new_name, new_brand, supplier_id or None, old_name, old_brand),
         )
         conn.commit()
+        _invalidate_prefix("units_by_model")
+        _invalidate_prefix("products_grouped")
     finally:
         conn.close()
 
@@ -588,6 +610,8 @@ def update_product_quantity(product_id, quantity_change):
             (quantity_change, product_id),
         )
         conn.commit()
+        _invalidate_prefix("units_by_model")
+        _invalidate_prefix("products_grouped")
     finally:
         conn.close()
 
@@ -602,6 +626,8 @@ def deactivate_product(product_id):
             (product_id,),
         )
         conn.commit()
+        _invalidate_prefix("units_by_model")
+        _invalidate_prefix("products_grouped")
     except Exception as e:
         if conn:
             conn.rollback()
@@ -630,6 +656,8 @@ def delete_product(product_id):
 
         conn.execute("DELETE FROM products WHERE id=?", (product_id,))
         conn.commit()
+        _invalidate_prefix("units_by_model")
+        _invalidate_prefix("products_grouped")
     except Exception as e:
         if conn:
             conn.rollback()
@@ -665,6 +693,8 @@ def delete_product_group(name, brand):
                 )
                 desactivados += 1
         conn.commit()
+        _invalidate_prefix("units_by_model")
+        _invalidate_prefix("products_grouped")
         return eliminados, desactivados
     except Exception as e:
         conn.rollback()
@@ -743,6 +773,8 @@ def create_movement(type_, product_id, employee_id, user_id, quantity, notes,
             )
 
         conn.commit()
+        _invalidate_prefix("units_by_model")
+        _invalidate_prefix("products_grouped")
     finally:
         conn.close()
 
