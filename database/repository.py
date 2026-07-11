@@ -304,7 +304,7 @@ def get_products_grouped(search="", status_filter="todos", warehouse_id=None):
         conn = get_connection()
         try:
             q = f"%{search}%"
-            where = "(p.name LIKE ? OR p.brand LIKE ?)"
+            where = "(p.name LIKE ? OR p.barcode LIKE ?)"
             params = [q, q]
             if status_filter == "disponible":
                 where += " AND p.status = 'disponible'"

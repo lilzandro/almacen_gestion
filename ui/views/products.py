@@ -1,6 +1,5 @@
 import tkinter as tk
 import customtkinter as ctk
-from ui.animations import dialog_open
 from ui.colors import (
     AZUL_NOCHE,
     AZUL_MARINO,
@@ -209,7 +208,6 @@ class ProductsView(ctk.CTkFrame):
         self.grid_rowconfigure(2, weight=1)
         self.grid_columnconfigure(0, weight=1)
         self._build()
-        self.refresh(force=True)
 
     def _build(self):
         hdr = ctk.CTkFrame(self, fg_color=AZUL_NOCHE)
@@ -275,18 +273,19 @@ class ProductsView(ctk.CTkFrame):
         ).pack(side="left", padx=(12, 4))
 
         self._search = ctk.StringVar()
-        self._search.trace_add("write", lambda *_: self.refresh())
         self._search_entry = ctk.CTkEntry(
             sf,
             textvariable=self._search,
-            placeholder_text="nombre, código, serie o marca...",
-            border_width=0,
-            fg_color="transparent",
+            placeholder_text="Buscar por nombre o código de barras",
+            border_width=1,
+            border_color=AZUL_MARINO,
+            fg_color="white",
             text_color=AZUL_NOCHE,
             placeholder_text_color=TEXTO_PLACEHOLDER,
-            font=ctk.CTkFont(size=17),
+            font=ctk.CTkFont(size=15),
         )
-        self._search_entry.pack(side="left", fill="x", expand=True, padx=(0, 12))
+        self._search_entry.pack(side="left", fill="x", expand=True, padx=(10, 12))
+        self._search_entry.bind("<Return>", lambda e: self.refresh())
 
         self._status_filter = ctk.StringVar(value="todos")
         self._filter_btns = {}
@@ -325,7 +324,6 @@ class ProductsView(ctk.CTkFrame):
         self._scroll = ctk.CTkScrollableFrame(tf, fg_color="#FFFFFF", corner_radius=0)
         self._scroll.grid(row=1, column=0, sticky="nsew")
         self._scroll.grid_columnconfigure(0, weight=1)
-
 
     def _build_table_header(self, parent):
         outer = ctk.CTkFrame(parent, fg_color=AZUL_MARINO, height=36, corner_radius=0)
@@ -379,6 +377,7 @@ class ProductsView(ctk.CTkFrame):
 
     def refresh(self, force=False):
         import time
+
         if not hasattr(self, "_scroll"):
             return
         now = time.time()
@@ -402,6 +401,17 @@ class ProductsView(ctk.CTkFrame):
         groups = get_products_grouped(
             search=q, status_filter=status, warehouse_id=wh_id
         )
+        if not groups:
+            msg = "No hay productos que mostrar.\nAgrega productos usando el botón ⊕ Nuevo Producto."
+            if q.strip() or self._status_filter.get() != "todos":
+                msg = "No se encontraron productos con esos criterios.\nIntenta con otro nombre, código de barras o filtro."
+            ctk.CTkLabel(
+                self._scroll,
+                text=msg,
+                font=ctk.CTkFont(size=16),
+                text_color=TEXTO_SECUNDARIO,
+                justify="center",
+            ).pack(pady=60)
         for i, g in enumerate(groups):
             group_key = f"{g['name']}__{g['brand']}"
             bg = FONDO_ROW_PAR if i % 2 == 0 else FONDO_ROW_IMPAR
@@ -434,7 +444,7 @@ class ProductsView(ctk.CTkFrame):
                 if key != group_key:
                     self._expanded.pop(key).destroy()
             for child in self._scroll.winfo_children():
-                if hasattr(child, 'is_open') and child != group_row and child.is_open:
+                if hasattr(child, "is_open") and child != group_row and child.is_open:
                     child.is_open = False
                     child.chevron.configure(text="▸")
             # Diferir la creación de widgets para no bloquear la UI
@@ -519,18 +529,30 @@ class ProductsView(ctk.CTkFrame):
 
         def _on_delete():
             try:
-                elim, desact = delete_product_group(group_data["name"], group_data["brand"])
+                elim, desact = delete_product_group(
+                    group_data["name"], group_data["brand"]
+                )
                 self.refresh(force=True)
                 partes = []
                 if elim:
                     partes.append(f"{elim} unidad(es) eliminada(s)")
                 if desact:
-                    partes.append(f"{desact} unidad(es) desactivada(s) (tenían movimientos)")
-                MessageDialog(self, "Grupo eliminado", "\n".join(partes) or "Sin cambios.")
+                    partes.append(
+                        f"{desact} unidad(es) desactivada(s) (tenían movimientos)"
+                    )
+                MessageDialog(
+                    self, "Grupo eliminado", "\n".join(partes) or "Sin cambios."
+                )
             except Exception as e:
                 MessageDialog(self, "Error", str(e), is_error=True)
 
-        _GroupEditDialog(self, group_data, on_save=_on_save, on_add_more=self._do_bulk_add, on_delete=_on_delete)
+        _GroupEditDialog(
+            self,
+            group_data,
+            on_save=_on_save,
+            on_add_more=self._do_bulk_add,
+            on_delete=_on_delete,
+        )
 
     def _scan_barcode(self):
         _BarcodeScanDialog(self, on_scan=self._handle_barcode_scan)
@@ -748,7 +770,9 @@ class _ChildRow(ctk.CTkFrame):
     _HOVER_BG = HOVER_FILA_BG
     _SELECT_BG = SELECCION_BG
 
-    def __init__(self, parent, unit, on_select, on_edit, on_delete=None, unit_code="und"):
+    def __init__(
+        self, parent, unit, on_select, on_edit, on_delete=None, unit_code="und"
+    ):
         super().__init__(parent, fg_color=self._NORMAL_BG, height=50, corner_radius=4)
         self.unit = unit
         self._unit_code = unit_code
@@ -825,14 +849,22 @@ class _ChildRow(ctk.CTkFrame):
         if self._unit_code == "m":
             qty = int(self.unit["quantity"] or 0)
             ctk.CTkLabel(
-                self, text=f"{qty} m", width=80,
-                font=ctk.CTkFont(size=13), text_color=GRIS_AZULADO, anchor="w",
+                self,
+                text=f"{qty} m",
+                width=80,
+                font=ctk.CTkFont(size=13),
+                text_color=GRIS_AZULADO,
+                anchor="w",
             ).pack(side="left", padx=(8, 8))
         elif self._unit_code == "caja":
             qty = int(self.unit["quantity"] or 0)
             ctk.CTkLabel(
-                self, text=str(qty), width=80,
-                font=ctk.CTkFont(size=13), text_color=GRIS_AZULADO, anchor="w",
+                self,
+                text=str(qty),
+                width=80,
+                font=ctk.CTkFont(size=13),
+                text_color=GRIS_AZULADO,
+                anchor="w",
             ).pack(side="left", padx=(8, 8))
         _StatusPill(self, self.unit["status"]).pack(side="left", padx=8)
 
@@ -978,8 +1010,11 @@ class _GroupRow(ctk.CTkFrame):
         unit_count = raw["unit_count"]
         total_qty = raw.get("total_quantity") or 0
         import os as _os
+
         if _os.environ.get("DEBUG_PROD"):
-            print(f"[DBG] {raw['name']}: unit={unit} unit_count={unit_count} total_qty={total_qty} disponible_count={raw['disponible_count']} all_keys={list(raw.keys())}")
+            print(
+                f"[DBG] {raw['name']}: unit={unit} unit_count={unit_count} total_qty={total_qty} disponible_count={raw['disponible_count']} all_keys={list(raw.keys())}"
+            )
         if unit == "und":
             count = unit_count
         else:
@@ -1386,8 +1421,11 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
                 self.in_marca.set(prefill["brand"])
                 self.in_marca.entry.configure(state="disabled")
             sup_name = next(
-                (n for n, sid in self._supplier_id_map.items()
-                 if sid == prefill.get("supplier_id")),
+                (
+                    n
+                    for n, sid in self._supplier_id_map.items()
+                    if sid == prefill.get("supplier_id")
+                ),
                 "Sin proveedor",
             )
             self.in_proveedor.set(sup_name)
@@ -1403,21 +1441,32 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
     # ── Cabecera azul marino con contador ────────────────────────────────────
     def _build_header(self):
         h = ctk.CTkFrame(self, fg_color=V_NAVY, corner_radius=0, height=72)
-        h.pack(fill="x", side="top"); h.pack_propagate(False)
+        h.pack(fill="x", side="top")
+        h.pack_propagate(False)
         left = ctk.CTkFrame(h, fg_color="transparent")
         left.pack(side="left", padx=24, pady=14)
-        ctk.CTkLabel(left, text="INVENTARIO · NUEVO ÍTEM", font=self.fonts["eyebrow"],
-                     text_color="#86a7c9").pack(anchor="w")
-        ctk.CTkLabel(left, text="REGISTRAR PRODUCTO", font=self.fonts["title"],
-                     text_color=V_WHITE).pack(anchor="w")
+        ctk.CTkLabel(
+            left,
+            text="INVENTARIO · NUEVO ÍTEM",
+            font=self.fonts["eyebrow"],
+            text_color="#86a7c9",
+        ).pack(anchor="w")
+        ctk.CTkLabel(
+            left,
+            text="REGISTRAR PRODUCTO",
+            font=self.fonts["title"],
+            text_color=V_WHITE,
+        ).pack(anchor="w")
 
         pill = ctk.CTkFrame(h, fg_color=NAVY_2, corner_radius=999)
         pill.pack(side="right", padx=24)
-        self.counter_num = ctk.CTkLabel(pill, text="1", font=self.fonts["counter"],
-                                        text_color=V_WHITE)
+        self.counter_num = ctk.CTkLabel(
+            pill, text="1", font=self.fonts["counter"], text_color=V_WHITE
+        )
         self.counter_num.pack(side="left", padx=(14, 6), pady=7)
-        self.counter_unit = ctk.CTkLabel(pill, text="EQUIPO", font=self.fonts["eyebrow"],
-                                         text_color="#9fbcd8")
+        self.counter_unit = ctk.CTkLabel(
+            pill, text="EQUIPO", font=self.fonts["eyebrow"], text_color="#9fbcd8"
+        )
         self.counter_unit.pack(side="left", padx=(0, 14))
 
     # ── Cuerpo con scroll (3 secciones) ──────────────────────────────────────
@@ -1432,18 +1481,23 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
 
     def _rebind_mousewheel(self):
         canvas = self._body._parent_canvas
+
         def _on_mw(event):
             canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
         def _on_mw_up(event):
             canvas.yview_scroll(-1, "units")
+
         def _on_mw_down(event):
             canvas.yview_scroll(1, "units")
+
         def _bind_children(w):
             for child in w.winfo_children():
                 child.bind("<MouseWheel>", _on_mw)
                 child.bind("<Button-4>", _on_mw_up)
                 child.bind("<Button-5>", _on_mw_down)
                 _bind_children(child)
+
         _bind_children(self._body)
 
     @staticmethod
@@ -1455,32 +1509,48 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
         sec.pack(fill="x", padx=24, pady=22)
         sec.columnconfigure((0, 1), weight=1, uniform="col")
         section_header(sec, self.fonts, num, title).grid(
-            row=0, column=0, columnspan=2, sticky="w", pady=(0, 16))
+            row=0, column=0, columnspan=2, sticky="w", pady=(0, 16)
+        )
         return sec
 
     @staticmethod
     def _place(widget, row, col, span=1, pady=(0, 14)):
         padx = 0 if span == 2 else ((0, 9) if col == 0 else (9, 0))
-        widget.grid(row=row, column=col, columnspan=span, sticky="ew", padx=padx, pady=pady)
+        widget.grid(
+            row=row, column=col, columnspan=span, sticky="ew", padx=padx, pady=pady
+        )
 
     # ── Sección 1 — Identificación e información básica ──────────────────────
     def _build_seccion_basica(self, parent):
         sec = self._section(parent, 1, "Identificación e información básica")
         f = self.fonts
-        self.in_nombre = LabeledEntry(sec, f, "Nombre del producto", required=True,
-                                      placeholder="Router ONT Huawei…",
-                                      hint="Ej: Router ONT Huawei HG8245H")
-        self.in_barcode = LabeledEntry(sec, f, "Código de barras", mono=True,
-                                       placeholder="RED-ONT-0042",
-                                       hint="Código de barras del producto")
-        self.in_categoria = LabeledSelect(sec, f, "Categoría", CATEGORIA_NOMBRES,
-                                          required=True, placeholder="Seleccionar categoría…",
-                                          command=self.on_categoria_change)
-        self.in_marca = LabeledEntry(sec, f, "Marca / Fabricante",
-                                     placeholder="Huawei, Cisco, Furukawa…")
-        self.in_modelo = LabeledEntry(sec, f, "Modelo", mono=True, placeholder="HG8245H")
-        self.in_proveedor = LabeledSelect(sec, f, "Proveedor", self._supplier_names,
-                                          placeholder="Sin proveedor")
+        self.in_nombre = LabeledEntry(
+            sec,
+            f,
+            "Nombre del producto",
+            required=True,
+            hint="Ej: Router ONT Huawei HG8245H",
+        )
+        self.in_barcode = LabeledEntry(
+            sec,
+            f,
+            "Código de barras",
+            mono=True,
+            hint="Código de barras del producto",
+        )
+        self.in_categoria = LabeledSelect(
+            sec,
+            f,
+            "Categoría",
+            CATEGORIA_NOMBRES,
+            required=True,
+            command=self.on_categoria_change,
+        )
+        self.in_marca = LabeledEntry(sec, f, "Marca / Fabricante")
+        self.in_modelo = LabeledEntry(sec, f, "Modelo", mono=True)
+        self.in_proveedor = LabeledSelect(
+            sec, f, "Proveedor", self._supplier_names
+        )
 
         self._place(self.in_nombre, 1, 0)
         self._place(self.in_barcode, 1, 1)
@@ -1493,13 +1563,18 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
     def _build_seccion_existencias(self, parent):
         sec = self._section(parent, 2, "Control de existencias y trazabilidad")
         f = self.fonts
-        self.in_unidad = LabeledSelect(sec, f, "Unidad de medida",
-                                       [u[1] for u in UNIDADES],
-                                       command=self._on_unidad_change)
+        self.in_unidad = LabeledSelect(
+            sec,
+            f,
+            "Unidad de medida",
+            [u[1] for u in UNIDADES],
+            command=self._on_unidad_change,
+        )
         self._place(self.in_unidad, 1, 0, span=2)
 
-        ctk.CTkLabel(sec, text="Tipo de control de inventario", font=f["label"],
-                     text_color=INK_2).grid(row=2, column=0, columnspan=2, sticky="w", pady=(2, 6))
+        ctk.CTkLabel(
+            sec, text="Tipo de control de inventario", font=f["label"], text_color=INK_2
+        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(2, 6))
         self.inv_toggle = InventoryToggle(sec, f, command=self.set_control)
         self.inv_toggle.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(0, 14))
 
@@ -1517,7 +1592,7 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
 
         if mode == CTRL_SERIE:
             categoria = self.in_categoria.get()
-            show_mac = (categoria != "Herramientas")
+            show_mac = categoria != "Herramientas"
             code = self._unidad_code()
             if code == "m":
                 label_text = "Rollos a registrar"
@@ -1525,22 +1600,33 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
                 label_text = "Lotes a registrar"
             else:
                 label_text = "Equipos / unidades a registrar"
-            lbl = ctk.CTkLabel(self.exist_dyn, text=label_text,
-                               font=f["label"], text_color=INK_2)
+            lbl = ctk.CTkLabel(
+                self.exist_dyn, text=label_text, font=f["label"], text_color=INK_2
+            )
             lbl.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 6))
-            self.serial_table = SerialTable(self.exist_dyn, f,
-                                            on_count_change=lambda _n: self.update_counter(),
-                                            show_mac=show_mac)
+            self.serial_table = SerialTable(
+                self.exist_dyn,
+                f,
+                on_count_change=lambda _n: self.update_counter(),
+                show_mac=show_mac,
+            )
             self.serial_table.grid(row=1, column=0, columnspan=2, sticky="ew")
         else:
             self.in_serial_stock = LabeledEntry(
-                self.exist_dyn, f, "Serial", mono=True,
-                placeholder="SN-XXXXXXXXXX",
+                self.exist_dyn,
+                f,
+                "Serial",
+                mono=True,
             )
             self._place(self.in_serial_stock, 0, 0, span=2)
-            self.in_stock = LabeledEntry(self.exist_dyn, f, self._stock_label(),
-                                         numeric=True, mono=True, placeholder="Ej: 1500",
-                                         on_change=self.update_counter)
+            self.in_stock = LabeledEntry(
+                self.exist_dyn,
+                f,
+                self._stock_label(),
+                numeric=True,
+                mono=True,
+                on_change=self.update_counter,
+            )
             self._place(self.in_stock, 1, 0, span=2)
         self.update_counter()
         self.after(10, self._rebind_mousewheel)
@@ -1587,28 +1673,53 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
     # ── Footer ───────────────────────────────────────────────────────────────
     def _build_footer(self):
         f = ctk.CTkFrame(self, fg_color=V_WHITE, corner_radius=0, height=72)
-        f.pack(fill="x", side="bottom"); f.pack_propagate(False)
+        f.pack(fill="x", side="bottom")
+        f.pack_propagate(False)
         ctk.CTkFrame(f, fg_color=LINE, height=1).pack(fill="x", side="top")
         inner = ctk.CTkFrame(f, fg_color="transparent")
         inner.pack(fill="both", expand=True, padx=24)
-        ctk.CTkLabel(inner, text="Desplázate para ver todas las secciones",
-                     font=self.fonts["hint"], text_color=INK_3).pack(side="left")
-        ctk.CTkButton(inner, text="✓ Guardar producto", font=self.fonts["btn"],
-                      height=BTN_H, corner_radius=RADIUS_BTN, fg_color=V_BLUE,
-                      hover_color=BLUE_D, text_color=V_WHITE,
-                      command=self.guardar).pack(side="right", padx=(12, 0), pady=14)
-        ctk.CTkButton(inner, text="✕ Cancelar", font=self.fonts["btn"], height=BTN_H,
-                      corner_radius=RADIUS_BTN, fg_color=V_WHITE, text_color=ORANGE_D,
-                      border_color="#f0d3b5", border_width=1, hover_color=ORANGE_SOFT,
-                      command=self.destroy).pack(side="right", pady=14)
+        ctk.CTkLabel(
+            inner,
+            text="Desplázate para ver todas las secciones",
+            font=self.fonts["hint"],
+            text_color=INK_3,
+        ).pack(side="left")
+        ctk.CTkButton(
+            inner,
+            text="✓ Guardar producto",
+            font=self.fonts["btn"],
+            height=BTN_H,
+            corner_radius=RADIUS_BTN,
+            fg_color=V_BLUE,
+            hover_color=BLUE_D,
+            text_color=V_WHITE,
+            command=self.guardar,
+        ).pack(side="right", padx=(12, 0), pady=14)
+        ctk.CTkButton(
+            inner,
+            text="✕ Cancelar",
+            font=self.fonts["btn"],
+            height=BTN_H,
+            corner_radius=RADIUS_BTN,
+            fg_color=V_WHITE,
+            text_color=ORANGE_D,
+            border_color="#f0d3b5",
+            border_width=1,
+            hover_color=ORANGE_SOFT,
+            command=self.destroy,
+        ).pack(side="right", pady=14)
 
     # ── Acciones ─────────────────────────────────────────────────────────────
     def recolectar(self):
         data = {
-            "nombre": self.in_nombre.get() if not self._prefill.get("name") else self._prefill["name"],
+            "nombre": self.in_nombre.get()
+            if not self._prefill.get("name")
+            else self._prefill["name"],
             "barcode": self.in_barcode.get(),
             "categoria": self.in_categoria.get(),
-            "marca": self.in_marca.get() if not self._prefill.get("brand") else self._prefill["brand"],
+            "marca": self.in_marca.get()
+            if not self._prefill.get("brand")
+            else self._prefill["brand"],
             "modelo": self.in_modelo.get(),
             "proveedor": self.in_proveedor.get(),
             "unidad": self._unidad_code(),
@@ -1616,19 +1727,28 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
         }
         if self.control_mode == CTRL_SERIE and self.serial_table:
             data["equipos"] = [
-                {"serial": r["serial"].get(),
-                 "mac": (r.get("mac") and r["mac"].get()) or "",
-                 "sin": r["chk_var"].get() == "on"}
-                for r in self.serial_table.rows]
+                {
+                    "serial": r["serial"].get(),
+                    "mac": (r.get("mac") and r["mac"].get()) or "",
+                    "sin": r["chk_var"].get() == "on",
+                }
+                for r in self.serial_table.rows
+            ]
         else:
             data["stock"] = getattr(self, "in_stock", None) and self.in_stock.get()
-            data["serial"] = getattr(self, "in_serial_stock", None) and self.in_serial_stock.get().strip() or ""
+            data["serial"] = (
+                getattr(self, "in_serial_stock", None)
+                and self.in_serial_stock.get().strip()
+                or ""
+            )
         return data
 
     def guardar(self):
         data = self.recolectar()
         faltan = []
-        nombre = data.get("nombre") or (self._prefill.get("name") if self._prefill else "")
+        nombre = data.get("nombre") or (
+            self._prefill.get("name") if self._prefill else ""
+        )
         if not nombre:
             faltan.append("Nombre")
             self.in_nombre.entry.configure(border_color=V_ORANGE)
@@ -1636,16 +1756,31 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
         if not categoria or categoria.startswith("Seleccionar"):
             faltan.append("Categoría")
         if faltan:
-            MessageDialog(self, "Campos obligatorios",
-                          "Completa los campos requeridos:\n• " + "\n• ".join(faltan))
+            MessageDialog(
+                self,
+                "Campos obligatorios",
+                "Completa los campos requeridos:\n• " + "\n• ".join(faltan),
+            )
             return
 
         if self._prefill and self._prefill.get("name"):
             nombre = self._prefill["name"]
-        marca = data.get("marca") or (self._prefill.get("brand") if self._prefill else "") or ""
+        marca = (
+            data.get("marca")
+            or (self._prefill.get("brand") if self._prefill else "")
+            or ""
+        )
         proveedor_text = data.get("proveedor", "Sin proveedor")
-        supplier_id = self._supplier_id_map.get(proveedor_text) if proveedor_text != "Sin proveedor" else None
-        wh_id = self.products_view.app.current_warehouse_id if self.products_view.app else None
+        supplier_id = (
+            self._supplier_id_map.get(proveedor_text)
+            if proveedor_text != "Sin proveedor"
+            else None
+        )
+        wh_id = (
+            self.products_view.app.current_warehouse_id
+            if self.products_view.app
+            else None
+        )
 
         print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
         print("📦 DATOS DEL PRODUCTO A REGISTRAR")
@@ -1657,7 +1792,9 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
         print(f"  Unidad:      {data.get('unidad', 'und')}")
         print(f"  Proveedor:   {proveedor_text}")
         print(f"  Control:     {data.get('control', '—')}")
-        print(f"  Modo:        {'SERIE (serial/MAC)' if self.control_mode == CTRL_SERIE else 'CANTIDAD (stock)'}")
+        print(
+            f"  Modo:        {'SERIE (serial/MAC)' if self.control_mode == CTRL_SERIE else 'CANTIDAD (stock)'}"
+        )
 
         if self.control_mode == CTRL_SERIE and self.serial_table:
             items = []
@@ -1674,7 +1811,9 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
                     seen.add(serial)
                 items.append({"serial": serial, "mac": mac.upper() if mac else ""})
             if not items:
-                MessageDialog(self, "Aviso", "Agrega al menos un equipo con serial o MAC.")
+                MessageDialog(
+                    self, "Aviso", "Agrega al menos un equipo con serial o MAC."
+                )
                 return
             common = {
                 "name": nombre,
@@ -1691,19 +1830,23 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
             self.on_save(common, items)
         else:
             import sqlite3
+
             try:
                 stock_val = int(data.get("stock") or 0)
             except (ValueError, TypeError):
                 stock_val = 0
             # Debug: contar si ya existen productos con mismo nombre+marca
             from database.connection import get_connection as _get_conn
+
             _conn = _get_conn()
             try:
                 _existing = _conn.execute(
                     "SELECT COUNT(*), COALESCE(SUM(quantity),0) FROM products WHERE name=? AND COALESCE(brand,'')=?",
-                    (nombre, marca)
+                    (nombre, marca),
                 ).fetchone()
-                print(f"  Ya existen: {_existing[0]} fila(s) con quantity total={_existing[1]}")
+                print(
+                    f"  Ya existen: {_existing[0]} fila(s) con quantity total={_existing[1]}"
+                )
             finally:
                 _conn.close()
             print(f"  Serial:      {data.get('serial', '—') or '—'}")
@@ -1724,10 +1867,17 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
             except sqlite3.IntegrityError as e:
                 if "barcode" in str(e):
                     print(f"  ❌ ERROR: código de barras duplicado")
-                    MessageDialog(self, "Error", "El código de barras ya existe en otro producto.", is_error=True)
+                    MessageDialog(
+                        self,
+                        "Error",
+                        "El código de barras ya existe en otro producto.",
+                        is_error=True,
+                    )
                 else:
                     print(f"  ❌ ERROR: {e}")
-                    MessageDialog(self, "Error", f"Error al guardar: {e}", is_error=True)
+                    MessageDialog(
+                        self, "Error", f"Error al guardar: {e}", is_error=True
+                    )
                 return
             if stock_val > 0:
                 try:
@@ -1742,15 +1892,21 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
                     )
                 except Exception as e:
                     print(f"  ❌ ERROR movimiento: {e}")
-                    MessageDialog(self, "Error", f"Error al registrar movimiento: {e}", is_error=True)
+                    MessageDialog(
+                        self,
+                        "Error",
+                        f"Error al registrar movimiento: {e}",
+                        is_error=True,
+                    )
                     return
             print(f"  ✅ Producto ID {pid} creado con stock={stock_val}")
             print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
             self.destroy()
             self.products_view.refresh(force=True)
             MessageDialog(
-                self.products_view, "Éxito",
-                f"Producto '{nombre}' registrado con {stock_val} unidad(es)."
+                self.products_view,
+                "Éxito",
+                f"Producto '{nombre}' registrado con {stock_val} unidad(es).",
             )
 
 
@@ -1830,7 +1986,8 @@ class _ProductDialog(ctk.CTkToplevel):
         cf.pack(fill="x", padx=14, pady=(10, 6))
 
         ctk.CTkLabel(
-            cf, text="DATOS COMUNES",
+            cf,
+            text="DATOS COMUNES",
             font=ctk.CTkFont(size=11, weight="bold"),
             text_color=AZUL_MARINO,
         ).pack(anchor="w", padx=14, pady=(10, 6))
@@ -1840,14 +1997,30 @@ class _ProductDialog(ctk.CTkToplevel):
             # Modo "agregar a modelo existente": nombre/marca bloqueados
             banner = ctk.CTkFrame(cf, fg_color=FONDO_SUBHEADER, corner_radius=6)
             banner.pack(fill="x", padx=14, pady=(0, 10))
-            ctk.CTkLabel(banner, text="Modelo:", font=ctk.CTkFont(size=12, weight="bold"),
-                         text_color=AZUL_MARINO).pack(side="left", padx=(12, 4), pady=8)
-            ctk.CTkLabel(banner, text=p["name"], font=ctk.CTkFont(size=13, weight="bold"),
-                         text_color=AZUL_NOCHE).pack(side="left", padx=(0, 20))
-            ctk.CTkLabel(banner, text="Marca:", font=ctk.CTkFont(size=12, weight="bold"),
-                         text_color=AZUL_MARINO).pack(side="left", padx=(0, 4))
-            ctk.CTkLabel(banner, text=p.get("brand") or "—", font=ctk.CTkFont(size=13),
-                         text_color=GRIS_AZULADO).pack(side="left")
+            ctk.CTkLabel(
+                banner,
+                text="Modelo:",
+                font=ctk.CTkFont(size=12, weight="bold"),
+                text_color=AZUL_MARINO,
+            ).pack(side="left", padx=(12, 4), pady=8)
+            ctk.CTkLabel(
+                banner,
+                text=p["name"],
+                font=ctk.CTkFont(size=13, weight="bold"),
+                text_color=AZUL_NOCHE,
+            ).pack(side="left", padx=(0, 20))
+            ctk.CTkLabel(
+                banner,
+                text="Marca:",
+                font=ctk.CTkFont(size=12, weight="bold"),
+                text_color=AZUL_MARINO,
+            ).pack(side="left", padx=(0, 4))
+            ctk.CTkLabel(
+                banner,
+                text=p.get("brand") or "—",
+                font=ctk.CTkFont(size=13),
+                text_color=GRIS_AZULADO,
+            ).pack(side="left")
             self._locked_name = p["name"]
             self._locked_brand = p.get("brand") or ""
         else:
@@ -1856,16 +2029,24 @@ class _ProductDialog(ctk.CTkToplevel):
 
             col_name = ctk.CTkFrame(row_nb, fg_color="transparent")
             col_name.pack(side="left", padx=(0, 12))
-            ctk.CTkLabel(col_name, text="Nombre *", font=ctk.CTkFont(size=12),
-                         text_color=GRIS_AZULADO).pack(anchor="w", pady=(0, 2))
-            self.name_e = _e(col_name, "Router TP-Link...", 230)
+            ctk.CTkLabel(
+                col_name,
+                text="Nombre *",
+                font=ctk.CTkFont(size=12),
+                text_color=GRIS_AZULADO,
+            ).pack(anchor="w", pady=(0, 2))
+            self.name_e = _e(col_name, width=230)
             self.name_e.pack()
 
             col_brand = ctk.CTkFrame(row_nb, fg_color="transparent")
             col_brand.pack(side="left")
-            ctk.CTkLabel(col_brand, text="Marca", font=ctk.CTkFont(size=12),
-                         text_color=GRIS_AZULADO).pack(anchor="w", pady=(0, 2))
-            self.brand_e = _e(col_brand, "TP-Link...", 160)
+            ctk.CTkLabel(
+                col_brand,
+                text="Marca",
+                font=ctk.CTkFont(size=12),
+                text_color=GRIS_AZULADO,
+            ).pack(anchor="w", pady=(0, 2))
+            self.brand_e = _e(col_brand, width=160)
             self.brand_e.pack()
 
         row_su = ctk.CTkFrame(cf, fg_color="transparent")
@@ -1879,64 +2060,113 @@ class _ProductDialog(ctk.CTkToplevel):
             )
             info_su = ctk.CTkFrame(row_su, fg_color=FONDO_SUBHEADER, corner_radius=6)
             info_su.pack(fill="x")
-            ctk.CTkLabel(info_su, text="Proveedor:", font=ctk.CTkFont(size=12, weight="bold"),
-                         text_color=AZUL_MARINO).pack(side="left", padx=(12, 4), pady=8)
-            ctk.CTkLabel(info_su, text=sup_name_display, font=ctk.CTkFont(size=12),
-                         text_color=GRIS_AZULADO).pack(side="left", padx=(0, 24))
-            ctk.CTkLabel(info_su, text="Unidad:", font=ctk.CTkFont(size=12, weight="bold"),
-                         text_color=AZUL_MARINO).pack(side="left", padx=(0, 4))
-            ctk.CTkLabel(info_su, text=p.get("unit") or "und", font=ctk.CTkFont(size=12),
-                         text_color=GRIS_AZULADO).pack(side="left")
+            ctk.CTkLabel(
+                info_su,
+                text="Proveedor:",
+                font=ctk.CTkFont(size=12, weight="bold"),
+                text_color=AZUL_MARINO,
+            ).pack(side="left", padx=(12, 4), pady=8)
+            ctk.CTkLabel(
+                info_su,
+                text=sup_name_display,
+                font=ctk.CTkFont(size=12),
+                text_color=GRIS_AZULADO,
+            ).pack(side="left", padx=(0, 24))
+            ctk.CTkLabel(
+                info_su,
+                text="Unidad:",
+                font=ctk.CTkFont(size=12, weight="bold"),
+                text_color=AZUL_MARINO,
+            ).pack(side="left", padx=(0, 4))
+            ctk.CTkLabel(
+                info_su,
+                text=p.get("unit") or "und",
+                font=ctk.CTkFont(size=12),
+                text_color=GRIS_AZULADO,
+            ).pack(side="left")
             self._locked_supplier_id = p.get("supplier_id")
             self._locked_unit = p.get("unit") or "und"
         else:
             col_sup = ctk.CTkFrame(row_su, fg_color="transparent")
             col_sup.pack(side="left", padx=(0, 12))
-            ctk.CTkLabel(col_sup, text="Proveedor", font=ctk.CTkFont(size=12),
-                         text_color=GRIS_AZULADO).pack(anchor="w", pady=(0, 2))
+            ctk.CTkLabel(
+                col_sup,
+                text="Proveedor",
+                font=ctk.CTkFont(size=12),
+                text_color=GRIS_AZULADO,
+            ).pack(anchor="w", pady=(0, 2))
             self.sup_opt = ctk.CTkOptionMenu(
-                col_sup, height=34, width=200, values=sup_names,
-                font=ctk.CTkFont(size=12), text_color="white",
-                fg_color=AZUL_MARINO, button_color=AZUL_MARINO,
+                col_sup,
+                height=34,
+                width=200,
+                values=sup_names,
+                font=ctk.CTkFont(size=12),
+                text_color="white",
+                fg_color=AZUL_MARINO,
+                button_color=AZUL_MARINO,
                 button_hover_color=AZUL_NOCHE,
             )
             self.sup_opt.pack()
 
             col_unit = ctk.CTkFrame(row_su, fg_color="transparent")
             col_unit.pack(side="left")
-            ctk.CTkLabel(col_unit, text="Unidad", font=ctk.CTkFont(size=12),
-                         text_color=GRIS_AZULADO).pack(anchor="w", pady=(0, 2))
+            ctk.CTkLabel(
+                col_unit,
+                text="Unidad",
+                font=ctk.CTkFont(size=12),
+                text_color=GRIS_AZULADO,
+            ).pack(anchor="w", pady=(0, 2))
             self.unit_opt = ctk.CTkOptionMenu(
-                col_unit, height=34, width=100,
+                col_unit,
+                height=34,
+                width=100,
                 values=["und", "m", "cm", "kg", "g", "L", "ml", "rollo", "caja", "par"],
-                font=ctk.CTkFont(size=12), text_color="white",
-                fg_color=AZUL_MARINO, button_color=AZUL_MARINO,
+                font=ctk.CTkFont(size=12),
+                text_color="white",
+                fg_color=AZUL_MARINO,
+                button_color=AZUL_MARINO,
                 button_hover_color=AZUL_NOCHE,
             )
             self.unit_opt.pack()
 
         row_gen = ctk.CTkFrame(cf, fg_color=FONDO_SCROLL, corner_radius=6)
         row_gen.pack(fill="x", padx=14, pady=(0, 12))
-        ctk.CTkLabel(row_gen, text="Cantidad de equipos:",
-                     font=ctk.CTkFont(size=12, weight="bold"),
-                     text_color=AZUL_MARINO).pack(side="left", padx=(12, 8), pady=8)
+        ctk.CTkLabel(
+            row_gen,
+            text="Cantidad de equipos:",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=AZUL_MARINO,
+        ).pack(side="left", padx=(12, 8), pady=8)
         self._qty_gen_e = ctk.CTkEntry(
-            row_gen, width=70, height=34,
-            font=ctk.CTkFont(size=13), fg_color=BLANCO_CALIDO,
-            border_width=1, border_color=AZUL_MARINO,
-            text_color=AZUL_NOCHE, placeholder_text="ej: 5",
+            row_gen,
+            width=70,
+            height=34,
+            font=ctk.CTkFont(size=13),
+            fg_color=BLANCO_CALIDO,
+            border_width=1,
+            border_color=AZUL_MARINO,
+            text_color=AZUL_NOCHE,
+            placeholder_text="ej: 5",
         )
         self._qty_gen_e.pack(side="left", padx=(0, 8))
         self._qty_gen_e.bind("<Return>", lambda e: self._generate_rows())
         ctk.CTkButton(
-            row_gen, text="▶ Generar filas", height=34, width=140,
-            fg_color=AZUL_CERULEO, hover_color=HOVER_CERULEO,
-            text_color="white", font=ctk.CTkFont(size=13, weight="bold"),
+            row_gen,
+            text="▶ Generar filas",
+            height=34,
+            width=140,
+            fg_color=AZUL_CERULEO,
+            hover_color=HOVER_CERULEO,
+            text_color="white",
+            font=ctk.CTkFont(size=13, weight="bold"),
             command=self._generate_rows,
         ).pack(side="left")
-        ctk.CTkLabel(row_gen, text="(genera filas automáticamente)",
-                     font=ctk.CTkFont(size=11), text_color=TEXTO_SECUNDARIO,
-                     ).pack(side="left", padx=8)
+        ctk.CTkLabel(
+            row_gen,
+            text="(genera filas automáticamente)",
+            font=ctk.CTkFont(size=11),
+            text_color=TEXTO_SECUNDARIO,
+        ).pack(side="left", padx=8)
 
         th = ctk.CTkFrame(self, fg_color=AZUL_MARINO, height=32, corner_radius=0)
         th.pack(fill="x", padx=14)
@@ -2226,11 +2456,11 @@ class _ProductDialog(ctk.CTkToplevel):
         ).pack(anchor="w", padx=15, pady=(14, 4))
 
         _lbl("Serial")
-        self.serial_e = _entry(d.get("serial", ""), "SN-XXXXXXXXXX")
+        self.serial_e = _entry(d.get("serial", ""))
         _lbl("MAC")
-        self.mac_e = _entry(d.get("mac", ""), "AA-BB-CC-DD-EE-FF")
+        self.mac_e = _entry(d.get("mac", ""))
         _lbl("Código de Barras")
-        self.barcode_e = _entry(d.get("barcode", ""), "código...")
+        self.barcode_e = _entry(d.get("barcode", ""))
         _lbl("Estado")
         self.status_opt = ctk.CTkOptionMenu(
             body,

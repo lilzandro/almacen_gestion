@@ -131,9 +131,12 @@ class App(ctk.CTk):
             v = view_cls(self._content, **kwargs)
             v.grid(row=0, column=0, sticky="nsew")
             self._views[view_name] = v
+            if not filter_fn:
+                v.refresh()
         else:
             self._views[view_name].grid()
-            self._views[view_name].refresh()
+            if not filter_fn:
+                self._views[view_name].refresh()
 
         if filter_fn and view_name in self._views:
             filter_fn(self._views[view_name])
