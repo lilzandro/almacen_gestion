@@ -467,8 +467,8 @@ def get_product_counts():
     try:
         row = conn.execute("""
             SELECT COUNT(*) total,
-                    COALESCE(SUM(quantity), 0) disponible,
-                    COALESCE(SUM(quantity <= 0), 0) sin_stock,
+                    COALESCE(SUM(CASE WHEN status='disponible' THEN 1 ELSE 0 END), 0) disponible,
+                    COALESCE(SUM(CASE WHEN status='disponible' AND quantity <= 0 THEN 1 ELSE 0 END), 0) sin_stock,
                     COALESCE(SUM(status='inactivo'), 0)    inactivo
             FROM products
         """).fetchone()
@@ -717,19 +717,19 @@ def get_all_movements(search="", limit=200, warehouse_id=None):
             params.append(warehouse_id)
         params.append(limit)
         rows = conn.execute(
-            f"""
-            SELECT m.id, m.type, m.timestamp, m.quantity,
-                   p.name || ' (' || COALESCE(p.barcode, p.serial, '') || ')' AS product,
-                   COALESCE(e.name, '-') AS employee,
-                   u.username AS registered_by, m.notes
-            FROM movements m
-            JOIN products p ON m.product_id = p.id
-            LEFT JOIN employees e ON m.employee_id = e.id
-            JOIN users u ON m.user_id = u.id
-            WHERE (m.type LIKE ? OR p.name LIKE ? OR p.barcode LIKE ? OR e.name LIKE ?)
-            {wh_filter}
-            ORDER BY m.id DESC LIMIT ?
-        """,
+                f"""
+                SELECT m.id, m.type, m.timestamp, m.quantity, m.employee_id,
+                       p.name || ' (' || COALESCE(p.barcode, p.serial, '') || ')' AS product,
+                       COALESCE(e.name, '-') AS employee,
+                       u.username AS registered_by, m.notes
+                FROM movements m
+                JOIN products p ON m.product_id = p.id
+                LEFT JOIN employees e ON m.employee_id = e.id
+                JOIN users u ON m.user_id = u.id
+                WHERE (m.type LIKE ? OR p.name LIKE ? OR p.barcode LIKE ? OR e.name LIKE ?)
+                {wh_filter}
+                ORDER BY m.id DESC LIMIT ?
+            """,
             params,
         ).fetchall()
         return rows
@@ -739,10 +739,23 @@ def get_all_movements(search="", limit=200, warehouse_id=None):
 
 def create_movement(type_, product_id, employee_id, user_id, quantity, notes,
                     warehouse_id=None):
-    """Crea un movimiento de inventario"""
+    """Crea un movimiento de inventario.
+    Valida stock suficiente para salida/asignacion antes de ejecutar."""
     conn = get_connection()
     try:
-        # Insertar el movimiento
+        q = quantity or 1
+
+        if type_ in ("salida", "asignacion"):
+            current = conn.execute(
+                "SELECT quantity FROM products WHERE id=?", (product_id,)
+            ).fetchone()
+            if not current:
+                raise ValueError("El producto no existe.")
+            if current["quantity"] < q:
+                raise ValueError(
+                    f"Stock insuficiente: disponible {current['quantity']}, solicitado {q}"
+                )
+
         conn.execute(
             """INSERT INTO movements
                (type, product_id, employee_id, user_id, quantity, notes, warehouse_id)
@@ -752,17 +765,16 @@ def create_movement(type_, product_id, employee_id, user_id, quantity, notes,
                 product_id,
                 employee_id or None,
                 user_id,
-                quantity or 1,
+                q,
                 notes or "",
                 warehouse_id,
             ),
         )
 
-        # Actualizar la cantidad del producto
         if type_ in ("entrada", "devolucion"):
-            quantity_change = quantity or 1
+            quantity_change = q
         elif type_ in ("salida", "asignacion"):
-            quantity_change = -(quantity or 1)
+            quantity_change = -q
         else:
             quantity_change = 0
 
@@ -775,6 +787,121 @@ def create_movement(type_, product_id, employee_id, user_id, quantity, notes,
         conn.commit()
         _invalidate_prefix("units_by_model")
         _invalidate_prefix("products_grouped")
+        _invalidate_prefix("movements_cache")
+    except ValueError:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def update_movement(movement_id, type_, employee_id, quantity, notes):
+    """Edita un movimiento existente y reajusta el stock del producto."""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        old = conn.execute(
+            "SELECT * FROM movements WHERE id=?", (movement_id,)
+        ).fetchone()
+        if not old:
+            raise ValueError("El movimiento no existe.")
+
+        old_type = old["type"]
+        old_qty = old["quantity"] or 1
+        new_qty = quantity or 1
+        product_id = old["product_id"]
+
+        # Revertir efecto del movimiento anterior
+        if old_type in ("entrada", "devolucion"):
+            revert = -old_qty
+        elif old_type in ("salida", "asignacion"):
+            revert = old_qty
+        else:
+            revert = 0
+
+        if revert != 0:
+            cursor.execute(
+                "UPDATE products SET quantity = quantity + ?, updated_at=datetime('now','localtime') WHERE id=?",
+                (revert, product_id),
+            )
+
+        # Validar stock si el nuevo movimiento es salida/asignacion
+        if type_ in ("salida", "asignacion"):
+            current = conn.execute(
+                "SELECT quantity FROM products WHERE id=?", (product_id,)
+            ).fetchone()
+            if current and current["quantity"] < new_qty:
+                raise ValueError(
+                    f"Stock insuficiente: disponible {current['quantity']}, solicitado {new_qty}"
+                )
+
+        # Aplicar efecto del nuevo movimiento
+        if type_ in ("entrada", "devolucion"):
+            apply = new_qty
+        elif type_ in ("salida", "asignacion"):
+            apply = -new_qty
+        else:
+            apply = 0
+
+        if apply != 0:
+            cursor.execute(
+                "UPDATE products SET quantity = quantity + ?, updated_at=datetime('now','localtime') WHERE id=?",
+                (apply, product_id),
+            )
+
+        cursor.execute(
+            """UPDATE movements SET type=?, employee_id=?, quantity=?, notes=?
+               WHERE id=?""",
+            (type_, employee_id or None, new_qty, notes or "", movement_id),
+        )
+
+        conn.commit()
+        _invalidate_prefix("units_by_model")
+        _invalidate_prefix("products_grouped")
+        _invalidate_prefix("movements_cache")
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def delete_movement(movement_id):
+    """Elimina un movimiento y revierte su efecto en el stock del producto."""
+    conn = get_connection()
+    try:
+        old = conn.execute(
+            "SELECT * FROM movements WHERE id=?", (movement_id,)
+        ).fetchone()
+        if not old:
+            raise ValueError("El movimiento no existe.")
+
+        old_type = old["type"]
+        old_qty = old["quantity"] or 1
+        product_id = old["product_id"]
+
+        # Revertir efecto del movimiento
+        if old_type in ("entrada", "devolucion"):
+            revert = -old_qty
+        elif old_type in ("salida", "asignacion"):
+            revert = old_qty
+        else:
+            revert = 0
+
+        if revert != 0:
+            conn.execute(
+                "UPDATE products SET quantity = quantity + ?, updated_at=datetime('now','localtime') WHERE id=?",
+                (revert, product_id),
+            )
+
+        conn.execute("DELETE FROM movements WHERE id=?", (movement_id,))
+        conn.commit()
+        _invalidate_prefix("units_by_model")
+        _invalidate_prefix("products_grouped")
+        _invalidate_prefix("movements_cache")
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
 
@@ -796,29 +923,50 @@ def get_movement_counts():
         conn.close()
 
 
-def get_dashboard_stats():
+def get_dashboard_stats(warehouse_id=None):
     """Obtiene conteos de productos, movimientos y movimientos recientes
-    en una sola conexión a la base de datos."""
+    en una sola conexión a la base de datos. Opcionalmente filtrar por almacén."""
     conn = get_connection()
     try:
-        product_row = conn.execute("""
+        wh_filter_p = ""
+        wh_filter_m = ""
+        params_p = []
+        params_m = []
+        if warehouse_id is not None:
+            wh_filter_p = "AND warehouse_id = ?"
+            wh_filter_m = "AND m.warehouse_id = ?"
+            params_p.append(warehouse_id)
+            params_m.append(warehouse_id)
+
+        product_row = conn.execute(
+            f"""
             SELECT COUNT(*) total,
-                   COALESCE(SUM(quantity), 0) disponible,
-                   COALESCE(SUM(quantity <= 0), 0) sin_stock,
+                   COALESCE(SUM(CASE WHEN status='disponible' THEN 1 ELSE 0 END), 0) disponible,
+                   COALESCE(SUM(CASE WHEN status='disponible' AND quantity <= 0 THEN 1 ELSE 0 END), 0) sin_stock,
                    COALESCE(SUM(status='inactivo'), 0) inactivo
             FROM products
-        """).fetchone()
+            WHERE 1=1 {wh_filter_p}
+            """,
+            params_p,
+        ).fetchone()
 
-        movement_row = conn.execute("""
+        movement_row = conn.execute(
+            f"""
             SELECT
                 COALESCE(SUM(type='entrada'), 0) entrada,
                 COALESCE(SUM(type='salida'), 0) salida,
                 COALESCE(SUM(type='devolucion'), 0) devolucion,
                 COALESCE(SUM(type='asignacion'), 0) asignacion
-            FROM movements
-        """).fetchone()
+            FROM movements m
+            WHERE 1=1 {wh_filter_m}
+            """,
+            params_m,
+        ).fetchone()
 
-        movements = conn.execute("""
+        params_ml = list(params_m)
+        params_ml.append(50)
+        movements = conn.execute(
+            f"""
             SELECT m.id, m.type, m.timestamp, m.quantity,
                    p.name || ' (' || COALESCE(p.barcode, p.serial, '') || ')' AS product,
                    COALESCE(e.name, '-') AS employee,
@@ -827,8 +975,11 @@ def get_dashboard_stats():
             JOIN products p ON m.product_id = p.id
             LEFT JOIN employees e ON m.employee_id = e.id
             JOIN users u ON m.user_id = u.id
-            ORDER BY m.id DESC LIMIT 50
-        """).fetchall()
+            WHERE 1=1 {wh_filter_m}
+            ORDER BY m.id DESC LIMIT ?
+            """,
+            params_ml,
+        ).fetchall()
 
         return {
             "product_counts": dict(product_row),

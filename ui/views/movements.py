@@ -1,8 +1,9 @@
+import tkinter as tk
 import customtkinter as ctk
 from tkinter import messagebox, filedialog
 
 from ui.colors import *
-from ui.widgets import make_table, clear_tree, setup_treeview_style
+from ui.widgets import make_table, clear_tree, setup_treeview_style, center_dialog
 from database.repository import (
     get_all_movements,
     get_all_employees,
@@ -10,6 +11,8 @@ from database.repository import (
     get_all_products,
     get_products_pending_return,
     create_movement,
+    update_movement,
+    delete_movement,
 )
 from core.export import export_movements
 
@@ -120,8 +123,17 @@ class MovementsView(ctk.CTkFrame):
             ("employee", "Empleado", 170),
             ("registered_by", "Registrado por", 120),
             ("notes", "Notas", 180),
+            ("actions", "Acciones", 120),
         ]
         self.tree = make_table(tf, cols, bg_color="white")
+        self.tree.bind("<Double-1>", self._on_double_click)
+        self._context_menu = tk.Menu(self, tearoff=0, font=ctk.CTkFont(size=13))
+        self._context_menu.add_command(label="✎ Editar", command=self._edit_selected)
+        self._context_menu.add_separator()
+        self._context_menu.add_command(
+            label="✕ Eliminar", foreground="#E04F16", command=self._delete_selected
+        )
+        self.tree.bind("<Button-3>", self._on_right_click)
 
     def set_type_filter(self, type_: str):
         self._type_filter.set(type_)
@@ -175,8 +187,61 @@ class MovementsView(ctk.CTkFrame):
                     r["employee"],
                     r["registered_by"],
                     r["notes"],
+                    "✎ ✕",
                 ),
             )
+
+    def _selected_movement(self):
+        sel = self.tree.selection()
+        if not sel:
+            messagebox.showwarning("Aviso", "Selecciona un movimiento.")
+            return None
+        return int(sel[0])
+
+    def _on_double_click(self, event):
+        self._edit_selected()
+
+    def _on_right_click(self, event):
+        item = self.tree.identify_row(event.y)
+        if item:
+            self.tree.selection_set(item)
+            self._context_menu.post(event.x_root, event.y_root)
+
+    def _edit_selected(self):
+        mid = self._selected_movement()
+        if mid is None:
+            return
+        rows = get_all_movements()
+        mov = next((r for r in rows if r["id"] == mid), None)
+        if not mov:
+            return
+        _MovementEditDialog(
+            self,
+            movement=dict(mov),
+            current_user=self.current_user,
+            on_save=lambda: self.refresh(),
+        )
+
+    def _delete_selected(self):
+        mid = self._selected_movement()
+        if mid is None:
+            return
+        from ui.widgets import ConfirmDialog
+
+        d = ConfirmDialog(
+            self,
+            "Eliminar movimiento",
+            "¿Eliminar este movimiento?\nEl stock del producto se reajustará automáticamente.",
+            is_danger=True,
+        )
+        self.wait_window(d)
+        if d.result:
+            try:
+                delete_movement(mid)
+                self.refresh()
+                messagebox.showinfo("Éxito", "Movimiento eliminado y stock reajustado.")
+            except Exception as e:
+                messagebox.showerror("Error", str(e))
 
     def _register_dialog(self):
         _MovementDialog(
@@ -411,12 +476,16 @@ class _MovementDialog(ctk.CTkToplevel):
             text_color=TEXTO_SECUNDARIO,
         ).pack(anchor="w", padx=15, pady=(0, 5))
 
-        products = [dict(p) for p in self._all_products if p["quantity"] > 0]
+        products = [dict(p) for p in self._all_products if p["quantity"] > 0 or p["serial"]]
         self._prod_select = _SearchableMultiSelect(
             left,
             products,
             "id",
-            lambda p: f"{p['name']} (disp: {p['quantity']})",
+            lambda p: (
+                f"{p['name']} - S/N: {p['serial']}"
+                if p["serial"] else
+                f"{p['name']} (disp: {p['quantity']})"
+            ),
             placeholder="Buscar producto...",
             fg_color=FONDO_MULTISELECT,
             show_quantity=True,
@@ -517,8 +586,10 @@ class _MovementDialog(ctk.CTkToplevel):
         if type_ == "salida":
             self._emp_frame.pack(fill="x", pady=(0, 10))
             self._veh_frame.pack(fill="x", pady=(0, 10))
-            products = [dict(p) for p in self._all_products if p["quantity"] > 0]
+            products = [dict(p) for p in self._all_products if p["quantity"] > 0 or p["serial"]]
             label_fn = lambda p: (
+                f"{p['name']} - S/N: {p['serial']}"
+                if p["serial"] else
                 f"{p['name']} (disp: {p['quantity']}) - {(p['barcode'] or '')}"
             )
         else:
@@ -568,5 +639,142 @@ class _MovementDialog(ctk.CTkToplevel):
                     warehouse_id=self.warehouse_id,
                 )
 
+        self.on_save()
+        self.destroy()
+
+
+class _MovementEditDialog(ctk.CTkToplevel):
+    def __init__(self, parent, movement, current_user, on_save):
+        super().__init__(parent)
+        self.title("Editar Movimiento")
+        self.geometry("500x480")
+        self.resizable(False, False)
+        self.configure(fg_color=BLANCO_CALIDO)
+        self.transient(parent)
+        self._movement = movement
+        self._current_user = current_user
+        self.on_save = on_save
+        self._employees = get_all_employees()
+
+        header = ctk.CTkFrame(self, fg_color=AZUL_NOCHE, height=60)
+        header.pack(fill="x")
+        header.pack_propagate(False)
+        ctk.CTkLabel(
+            header,
+            text="✎ EDITAR MOVIMIENTO",
+            font=ctk.CTkFont(size=20, weight="bold"),
+            text_color="white",
+        ).pack(pady=15)
+
+        body = ctk.CTkFrame(self, fg_color="white", corner_radius=8)
+        body.pack(fill="both", expand=True, padx=16, pady=12)
+
+        def _lbl(text):
+            ctk.CTkLabel(
+                body, text=text, anchor="w", text_color=AZUL_NOCHE,
+                font=ctk.CTkFont(size=13, weight="bold"),
+            ).pack(fill="x", padx=14, pady=(10, 2))
+
+        _lbl("Producto")
+        info = ctk.CTkFrame(body, fg_color=FONDO_SUBHEADER, corner_radius=6)
+        info.pack(fill="x", padx=14)
+        ctk.CTkLabel(
+            info, text=movement["product"],
+            font=ctk.CTkFont(size=13), text_color=GRIS_AZULADO,
+        ).pack(side="left", padx=12, pady=8)
+
+        _lbl("Tipo")
+        self.type_opt = ctk.CTkOptionMenu(
+            body, height=36,
+            font=ctk.CTkFont(size=13), text_color="white",
+            button_color=AZUL_MARINO, button_hover_color=AZUL_NOCHE,
+            fg_color=AZUL_MARINO, dropdown_font=ctk.CTkFont(size=13),
+            values=["entrada", "salida", "devolucion", "asignacion"],
+        )
+        self.type_opt.set(movement["type"])
+        self.type_opt.pack(fill="x", padx=14)
+
+        _lbl("Empleado")
+        emp_names = ["Ninguno"] + [
+            f"{e['name']} ({e['cedula']})" for e in self._employees
+        ]
+        self.emp_opt = ctk.CTkOptionMenu(
+            body, height=36,
+            font=ctk.CTkFont(size=13), text_color="white",
+            button_color=AZUL_MARINO, button_hover_color=AZUL_NOCHE,
+            fg_color=AZUL_MARINO, dropdown_font=ctk.CTkFont(size=13),
+            values=emp_names,
+        )
+        current_emp = next(
+            (f"{e['name']} ({e['cedula']})" for e in self._employees
+             if e["id"] == movement.get("employee_id")),
+            "Ninguno",
+        )
+        self.emp_opt.set(current_emp)
+        self.emp_opt.pack(fill="x", padx=14)
+
+        _lbl("Cantidad")
+        self.qty_e = ctk.CTkEntry(
+            body, height=36,
+            text_color=AZUL_NOCHE, fg_color=BLANCO_CALIDO,
+            font=ctk.CTkFont(size=13), border_width=1, border_color=AZUL_MARINO,
+        )
+        self.qty_e.insert(0, str(movement["quantity"] or 1))
+        self.qty_e.pack(fill="x", padx=14)
+
+        _lbl("Notas")
+        self.notes_e = ctk.CTkEntry(
+            body, height=80,
+            text_color=AZUL_NOCHE, fg_color=BLANCO_CALIDO,
+            font=ctk.CTkFont(size=13), border_width=1, border_color=AZUL_MARINO,
+            placeholder_text_color=TEXTO_PLACEHOLDER,
+        )
+        self.notes_e.insert(0, movement.get("notes") or "")
+        self.notes_e.pack(fill="x", padx=14, pady=(0, 10))
+
+        btns = ctk.CTkFrame(self, fg_color=BLANCO_CALIDO)
+        btns.pack(fill="x", padx=16, pady=(0, 12))
+        ctk.CTkButton(
+            btns, text="✓ GUARDAR", height=38,
+            font=ctk.CTkFont(size=13, weight="bold"),
+            fg_color=AZUL_MARINO, hover_color=AZUL_NOCHE, text_color="white",
+            command=self._save,
+        ).pack(side="left", fill="x", expand=True, padx=(0, 6))
+        ctk.CTkButton(
+            btns, text="✕ CANCELAR", height=38,
+            font=ctk.CTkFont(size=13, weight="bold"),
+            fg_color=NARANJA_INTENSO, hover_color=HOVER_NARANJA_INT,
+            text_color="white",
+            command=self.destroy,
+        ).pack(side="left", fill="x", expand=True)
+
+        center_dialog(self)
+        self.after(50, self.grab_set)
+
+    def _save(self):
+        try:
+            qty = int(self.qty_e.get().strip() or 1)
+        except ValueError:
+            messagebox.showwarning("Aviso", "Cantidad inválida.", parent=self)
+            return
+        emp_text = self.emp_opt.get()
+        emp_id = None
+        if emp_text != "Ninguno":
+            emp_id = next(
+                (e["id"] for e in self._employees
+                 if f"{e['name']} ({e['cedula']})" == emp_text),
+                None,
+            )
+        try:
+            update_movement(
+                self._movement["id"],
+                self.type_opt.get(),
+                emp_id,
+                qty,
+                self.notes_e.get().strip(),
+            )
+        except ValueError as e:
+            messagebox.showerror("Error", str(e), parent=self)
+            return
         self.on_save()
         self.destroy()

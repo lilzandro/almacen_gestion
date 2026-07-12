@@ -49,12 +49,13 @@ def export_movements(filepath: str):
         "ID",
         "Tipo",
         "Fecha/Hora",
+        "Cantidad",
         "Producto",
         "Empleado",
         "Registrado por",
         "Notas",
     ]
-    widths = [6, 12, 18, 32, 22, 16, 28]
+    widths = [6, 12, 18, 8, 32, 22, 16, 28]
     _apply_headers(ws, headers, widths)
 
     for r, row in enumerate(movements, 2):
@@ -62,6 +63,7 @@ def export_movements(filepath: str):
             row["id"],
             row["type"],
             row["timestamp"],
+            row["quantity"],
             row["product"],
             row["employee"],
             row["registered_by"],

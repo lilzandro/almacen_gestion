@@ -143,11 +143,16 @@ def make_dashboard_movements_list(parent, movements_data, bg_color="#FFFFFF"):
         ).pack(pady=100)
         return container
 
-    for i, movement in enumerate(movements_data):
-        create_movement_card(scrollable_frame, movement, i)
-        # Dar respiro a la UI cada 10 tarjetas
-        if i > 0 and i % 10 == 0:
-            parent.update_idletasks()
+    def _build_batch(start=0, batch_size=8):
+        if not scrollable_frame.winfo_exists():
+            return
+        end = min(start + batch_size, len(movements_data))
+        for i in range(start, end):
+            create_movement_card(scrollable_frame, movements_data[i], i)
+        if end < len(movements_data):
+            parent.after(1, _build_batch, end, batch_size)
+
+    _build_batch()
 
     return container
 

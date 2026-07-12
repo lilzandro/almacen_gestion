@@ -17,6 +17,7 @@ class DashboardView(ctk.CTkFrame):
     def __init__(self, parent, current_user, on_navigate=None, app=None):
         super().__init__(parent, fg_color=BLANCO_CALIDO)  # Fondo Base
         self.current_user = current_user
+        self.app = app
         self._on_navigate = on_navigate
         self.last_refresh_time = 0  # Timestamp of last refresh
         self.min_refresh_interval = (
@@ -98,11 +99,12 @@ class DashboardView(ctk.CTkFrame):
         cards_frame = ctk.CTkFrame(self, fg_color=BLANCO_CALIDO)
         cards_frame.grid(row=1, column=0, sticky="ew", padx=20, pady=10)
 
-        # Configure grid for all stats in a single row (4 columns)
+        # Configure grid for all stats in a single row (5 columns)
         cards_frame.grid_columnconfigure(0, weight=1)
         cards_frame.grid_columnconfigure(1, weight=1)
         cards_frame.grid_columnconfigure(2, weight=1)
         cards_frame.grid_columnconfigure(3, weight=1)
+        cards_frame.grid_columnconfigure(4, weight=1)
 
         self._stat_vars = {}
 
@@ -111,11 +113,13 @@ class DashboardView(ctk.CTkFrame):
             ("disponible",      "Productos Disponibles", HOVER_EXPORT, HOVER_EXPORT, "✅",
              lambda: self._go("products", lambda v: v.set_status_filter("disponible"))),
             ("entrada_count",   "Entradas",              AZUL_CERULEO, NARANJA_SELECCION, "📥",
-             lambda: self._go("products")),
+             lambda: self._go("movements", lambda v: v.set_type_filter("entrada"))),
             ("salida_count",    "Salidas",               NARANJA_SELECCION, NARANJA_SELECCION, "📤",
              lambda: self._go("movements", lambda v: v.set_type_filter("salida"))),
             ("devolucion_count","Devoluciones",           HOVER_EXPORT, NARANJA_SELECCION, "↩️",
              lambda: self._go("movements", lambda v: v.set_type_filter("devolucion"))),
+            ("asignacion_count","Asignaciones",           AZUL_CIELO, HOVER_MOV_ASIG, "📋",
+             lambda: self._go("movements", lambda v: v.set_type_filter("asignacion"))),
         ]
 
         for i, (key, title, icon_color, hover_border, icon, action) in enumerate(all_stat_defs):
@@ -234,7 +238,8 @@ class DashboardView(ctk.CTkFrame):
         self.loading_indicator.grid()
         self.update_idletasks()
         try:
-            stats = get_dashboard_stats()
+            wh_id = self.app.current_warehouse_id if self.app else None
+            stats = get_dashboard_stats(warehouse_id=wh_id)
             product_counts = stats["product_counts"]
             movement_counts = stats["movement_counts"]
             movements = stats["recent_movements"]
@@ -243,6 +248,7 @@ class DashboardView(ctk.CTkFrame):
                 "entrada_count": "entrada",
                 "salida_count": "salida",
                 "devolucion_count": "devolucion",
+                "asignacion_count": "asignacion",
             }
             counts = {**product_counts, **movement_counts}
             for key, lbl in self._stat_vars.items():

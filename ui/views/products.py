@@ -978,7 +978,7 @@ class _GroupRow(ctk.CTkFrame):
             font=ctk.CTkFont(size=13),
             command=self._toggle,
         )
-        self.chevron.grid(row=0, column=0, padx=(10, 2))
+        self.chevron.grid(row=0, column=0, padx=(12, 4))
 
         # Col 1: modelo (trunca con … si excede el ancho)
         lbl = _truncating_label(
@@ -1001,7 +1001,7 @@ class _GroupRow(ctk.CTkFrame):
             bg=self._bg,
             anchor="w",
         )
-        lbl.grid(row=0, column=2, sticky="ew", padx=(4, 4))
+        lbl.grid(row=0, column=2, sticky="ew", padx=(8, 4))
         self._tk_labels.append(lbl)
 
         # Col 3: unidades badge
@@ -1015,10 +1015,7 @@ class _GroupRow(ctk.CTkFrame):
             print(
                 f"[DBG] {raw['name']}: unit={unit} unit_count={unit_count} total_qty={total_qty} disponible_count={raw['disponible_count']} all_keys={list(raw.keys())}"
             )
-        if unit == "und":
-            count = unit_count
-        else:
-            count = total_qty if total_qty else unit_count
+        count = total_qty if total_qty else unit_count
         ctk.CTkLabel(
             inner,
             text=f"{count}  {unit}",
@@ -1029,10 +1026,7 @@ class _GroupRow(ctk.CTkFrame):
         ).grid(row=0, column=3, padx=8, sticky="w")
 
         # Col 4: stock pill
-        if unit == "und":
-            stock_count = raw["disponible_count"]
-        else:
-            stock_count = total_qty if total_qty else raw["disponible_count"]
+        stock_count = total_qty if total_qty else raw["disponible_count"]
         if stock_count == 0:
             stock_bg, stock_fg, stock_txt = (
                 STOCK_AGOTADO_BG,
@@ -1433,6 +1427,11 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
             self._locked_unit = prefill.get("unit", "und")
             self.in_unidad.set(UNIDAD_LABEL.get(self._locked_unit, "Unidades (pieza)"))
             self.in_unidad.menu.configure(state="disabled")
+            for cat_nombre, cat_cfg in CATEGORIAS.items():
+                if cat_cfg["unidad"] == self._locked_unit:
+                    self.in_categoria.set(cat_nombre)
+                    break
+            self.in_categoria.menu.configure(state="disabled")
         else:
             self.on_categoria_change(CATEGORIA_NOMBRES[0])
         self.after(50, self._rebind_mousewheel)
