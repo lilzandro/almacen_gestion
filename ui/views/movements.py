@@ -8,9 +8,12 @@ from database.repository import (
     get_all_movements,
     get_all_employees,
     get_all_vehicles,
-    get_all_products,
-    get_products_pending_return,
-    create_movement,
+    get_movement_available_products,
+    get_products_pending_return_grouped,
+    get_serials_pending_return,
+    create_grouped_movement,
+    create_quantity_return,
+    return_serial,
     update_movement,
     delete_movement,
 )
@@ -244,10 +247,16 @@ class MovementsView(ctk.CTkFrame):
                 messagebox.showerror("Error", str(e))
 
     def _register_dialog(self):
+        def _on_save():
+            self.refresh()
+            if self.app:
+                pv = self.app._views.get("products")
+                if pv:
+                    pv.refresh(force=True)
         _MovementDialog(
             self,
             current_user=self.current_user,
-            on_save=lambda: self.refresh(),
+            on_save=_on_save,
             warehouse_id=self.app.current_warehouse_id if self.app else None,
         )
 
@@ -407,9 +416,9 @@ class _MovementDialog(ctk.CTkToplevel):
         self.current_user = current_user
         self.on_save = on_save
 
-        self._all_products = get_all_products(search="", include_inactive=False)
         self._employees = get_all_employees()
         self._vehicles = get_all_vehicles()
+        self._group_items = {}
 
         main = ctk.CTkFrame(self, fg_color=BLANCO_CALIDO)
         main.pack(fill="both", expand=True)
@@ -471,26 +480,51 @@ class _MovementDialog(ctk.CTkToplevel):
         ).pack(anchor="w", padx=15, pady=(15, 5))
         ctk.CTkLabel(
             left,
-            text="Selecciona y escribe la cantidad por cada producto",
+            text="Selecciona el grupo y escribe la cantidad deseada",
             font=ctk.CTkFont(size=11),
             text_color=TEXTO_SECUNDARIO,
         ).pack(anchor="w", padx=15, pady=(0, 5))
 
-        products = [dict(p) for p in self._all_products if p["quantity"] > 0 or p["serial"]]
+        # Build grouped product list
+        grouped = get_movement_available_products(warehouse_id=warehouse_id)
+        products = []
+        for g in grouped:
+            d = dict(g)
+            d["key"] = f"{g['name']}||{g['brand']}"
+            self._group_items[d["key"]] = d
+            products.append(d)
         self._prod_select = _SearchableMultiSelect(
             left,
             products,
-            "id",
-            lambda p: (
-                f"{p['name']} - S/N: {p['serial']}"
-                if p["serial"] else
-                f"{p['name']} (disp: {p['quantity']})"
-            ),
+            "key",
+            lambda g: f"{g['name']} ({g.get('brand', '') or '—'}) — disp: {g['available']} {g['unit']}",
             placeholder="Buscar producto...",
             fg_color=FONDO_MULTISELECT,
             show_quantity=True,
         )
         self._prod_select.pack(fill="both", expand=True, padx=15, pady=(0, 15))
+
+        # Seriales pendientes de devolución (oculto por defecto)
+        self._serial_frame = ctk.CTkFrame(left, fg_color="transparent")
+        ctk.CTkLabel(
+            self._serial_frame,
+            text="SERIALES EN SALIDA",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=TEXTO_MOV_FIELD,
+        ).pack(anchor="w", pady=(10, 5))
+        ctk.CTkLabel(
+            self._serial_frame,
+            text="Marca los seriales a devolver",
+            font=ctk.CTkFont(size=11),
+            text_color=TEXTO_SECUNDARIO,
+        ).pack(anchor="w")
+        self._serial_inner = ctk.CTkScrollableFrame(
+            self._serial_frame, fg_color="white", height=200
+        )
+        self._serial_inner.pack(fill="both", expand=True, pady=(5, 0))
+        self._serial_checkvars = {}
+        self._serial_ids = {}
+        self._serial_frame.pack_forget()  # oculto hasta seleccionar devolucion
 
         ctk.CTkLabel(
             right,
@@ -586,58 +620,154 @@ class _MovementDialog(ctk.CTkToplevel):
         if type_ == "salida":
             self._emp_frame.pack(fill="x", pady=(0, 10))
             self._veh_frame.pack(fill="x", pady=(0, 10))
-            products = [dict(p) for p in self._all_products if p["quantity"] > 0 or p["serial"]]
-            label_fn = lambda p: (
-                f"{p['name']} - S/N: {p['serial']}"
-                if p["serial"] else
-                f"{p['name']} (disp: {p['quantity']}) - {(p['barcode'] or '')}"
-            )
+            self._serial_frame.pack_forget()
+            grouped = get_movement_available_products(warehouse_id=self.warehouse_id)
         else:
             self._emp_frame.pack_forget()
             self._veh_frame.pack_forget()
-            products = [dict(p) for p in get_products_pending_return()]
-            label_fn = lambda p: (
-                f"{p['name']} (pend: {p['available']}) - {(p['barcode'] or '')}"
-            )
+            self._serial_frame.pack(fill="both", expand=True, padx=15, pady=(0, 10))
+            self._load_serials_pending()
+            grouped = get_products_pending_return_grouped(warehouse_id=self.warehouse_id)
 
+        products = []
+        self._group_items = {}
+        for g in grouped:
+            d = dict(g)
+            d["key"] = f"{g['name']}||{g['brand']}"
+            self._group_items[d["key"]] = d
+            products.append(d)
+
+        metric = "available" if type_ == "salida" else "pending"
+        label_fn = lambda g, m=metric: (
+            f"{g['name']} ({g.get('brand', '') or '—'}) — {m}: {g.get(m, 0)} {g['unit']}"
+        )
         self._prod_select._items = products
         self._prod_select._item_label = label_fn
+        self._prod_select._item_key = "key"
         self._prod_select._selected = set()
         self._prod_select._quantities = {}
         self._prod_select._filter_items()
 
+    def _load_serials_pending(self):
+        """Carga la lista de seriales en estado 'no disponible' (pendientes de devolucion)."""
+        for w in self._serial_inner.winfo_children():
+            w.destroy()
+        self._serial_checkvars = {}
+        self._serial_ids = {}
+
+        serials = [dict(s) for s in get_serials_pending_return(warehouse_id=self.warehouse_id)]
+        if not serials:
+            ctk.CTkLabel(
+                self._serial_inner,
+                text="No hay seriales pendientes de devolución.",
+                font=ctk.CTkFont(size=13),
+                text_color=TEXTO_SECUNDARIO,
+            ).pack(pady=20)
+            return
+
+        for s in serials:
+            row = ctk.CTkFrame(self._serial_inner, fg_color="white")
+            row.pack(fill="x", pady=1)
+
+            var = ctk.BooleanVar()
+            chk = ctk.CTkCheckBox(
+                row,
+                text=f"{s['name']} ({s.get('brand', '') or '—'}) — S/N: {s['serial']}",
+                variable=var,
+                font=ctk.CTkFont(size=12),
+                checkbox_height=20, checkbox_width=20,
+            )
+            chk.pack(side="left", padx=6, pady=4)
+            if s.get("salida_fecha"):
+                ctk.CTkLabel(
+                    row,
+                    text=f"Salida: {s['salida_fecha'][:10]}",
+                    font=ctk.CTkFont(size=11),
+                    text_color=TEXTO_SECUNDARIO,
+                ).pack(side="right", padx=8)
+
+            self._serial_checkvars[s["id"]] = var
+            self._serial_ids[s["id"]] = s
+
     def _save(self):
         type_ = self.type_opt.get()
-        selected_products = self._prod_select.get_selected()
-        if not selected_products:
-            messagebox.showwarning(
-                "Aviso", "Selecciona al menos un producto.", parent=self
-            )
-            return
-
-        selected_employees = self._emp_select.get_selected()
-        if type_ == "salida" and not selected_employees:
-            messagebox.showwarning(
-                "Aviso", "Selecciona al menos un empleado para salida.", parent=self
-            )
-            return
-
         notes = self.notes_e.get().strip()
+        selected_employees = self._emp_select.get_selected()
 
-        employees_to_assign = selected_employees if selected_employees else [None]
-        for product_id, quantity in selected_products:
-            if quantity < 1:
-                continue
-            for employee_id in employees_to_assign:
-                create_movement(
-                    type_,
-                    product_id,
-                    employee_id,
-                    self.current_user["id"],
-                    quantity,
-                    notes,
-                    warehouse_id=self.warehouse_id,
+        if type_ == "salida":
+            if not selected_employees:
+                messagebox.showwarning(
+                    "Aviso", "Selecciona al menos un empleado para salida.", parent=self
                 )
+                return
+            selected_raw = self._prod_select.get_selected()
+            if not selected_raw:
+                messagebox.showwarning(
+                    "Aviso", "Selecciona al menos un producto.", parent=self
+                )
+                return
+            for key, quantity in selected_raw:
+                if quantity < 1:
+                    continue
+                g = self._group_items.get(key)
+                if not g:
+                    continue
+                name = g["name"]
+                brand = g.get("brand", "")
+                for employee_id in selected_employees:
+                    try:
+                        create_grouped_movement(
+                            type_, name, brand, quantity,
+                            employee_id, self.current_user["id"], notes,
+                            warehouse_id=self.warehouse_id,
+                        )
+                    except ValueError as e:
+                        messagebox.showerror("Error", str(e), parent=self)
+                        return
+        else:
+            # Devolucion: procesar cantidad + seriales
+            selected_raw = self._prod_select.get_selected()
+            has_qty = bool(selected_raw)
+            has_serials = any(
+                v.get() for v in self._serial_checkvars.values()
+            ) if hasattr(self, "_serial_checkvars") else False
+
+            if not has_qty and not has_serials:
+                messagebox.showwarning(
+                    "Aviso",
+                    "Selecciona productos por cantidad o marca seriales a devolver.",
+                    parent=self,
+                )
+                return
+
+            if has_qty:
+                for key, quantity in selected_raw:
+                    if quantity < 1:
+                        continue
+                    g = self._group_items.get(key)
+                    if not g:
+                        continue
+                    try:
+                        create_quantity_return(
+                            g["name"], g.get("brand", ""), quantity,
+                            self.current_user["id"], notes,
+                            warehouse_id=self.warehouse_id,
+                        )
+                    except ValueError as e:
+                        messagebox.showerror("Error", str(e), parent=self)
+                        return
+
+            if has_serials:
+                for pid, var in self._serial_checkvars.items():
+                    if var.get():
+                        try:
+                            return_serial(
+                                pid, self.current_user["id"], notes,
+                                warehouse_id=self.warehouse_id,
+                            )
+                        except ValueError as e:
+                            messagebox.showerror("Error", str(e), parent=self)
+                            return
 
         self.on_save()
         self.destroy()
