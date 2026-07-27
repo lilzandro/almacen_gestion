@@ -517,6 +517,8 @@ class ProductsView(ctk.CTkFrame):
         widget.select()
 
     def _edit_group(self, group_data):
+        wh_id = self.app.current_warehouse_id if self.app else None
+
         def _on_save(d):
             update_product_group(
                 group_data["name"],
@@ -524,13 +526,17 @@ class ProductsView(ctk.CTkFrame):
                 d["name"],
                 d["brand"],
                 d["supplier_id"],
+                user_id=self.current_user["id"],
+                warehouse_id=wh_id,
             )
             self.refresh(force=True)
 
         def _on_delete():
             try:
                 elim, desact = delete_product_group(
-                    group_data["name"], group_data["brand"]
+                    group_data["name"], group_data["brand"],
+                    user_id=self.current_user["id"],
+                    warehouse_id=wh_id,
                 )
                 self.refresh(force=True)
                 partes = []
@@ -675,6 +681,7 @@ class ProductsView(ctk.CTkFrame):
 
         def _on_save(d):
             import sqlite3
+            wh_id = self.app.current_warehouse_id if self.app else None
 
             try:
                 update_product_unit(
@@ -683,6 +690,8 @@ class ProductsView(ctk.CTkFrame):
                     d["mac"],
                     d["barcode"] or None,
                     d["status"],
+                    user_id=self.current_user["id"],
+                    warehouse_id=wh_id,
                 )
                 self.refresh(force=True)
             except sqlite3.IntegrityError:
@@ -729,8 +738,14 @@ class ProductsView(ctk.CTkFrame):
         self.wait_window(dialog)
 
         if dialog.result:
+            wh_id = self.app.current_warehouse_id if self.app else None
             try:
-                delete_product(product_id)
+                delete_product(
+                    product_id,
+                    user_id=self.current_user["id"],
+                    notes=f"Producto eliminado: {product_name}",
+                    warehouse_id=wh_id,
+                )
                 self.refresh(force=True)
                 MessageDialog(
                     self, "Éxito", f"El producto '{product_name}' ha sido eliminado."

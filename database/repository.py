@@ -567,24 +567,46 @@ def update_product(
         conn.close()
 
 
-def update_product_unit(product_id, serial, mac, barcode, status):
+def update_product_unit(product_id, serial, mac, barcode, status, user_id=None, warehouse_id=None):
     """Actualiza los identificadores y estado de una unidad individual."""
     conn = get_connection()
     try:
+        old = conn.execute(
+            "SELECT serial, mac, barcode, status, name FROM products WHERE id=?",
+            (product_id,),
+        ).fetchone() if user_id else None
+
         conn.execute(
             """UPDATE products SET serial=?, mac=?, barcode=?, status=?,
                                  updated_at=datetime('now','localtime')
                WHERE id=?""",
             (serial or None, mac or None, barcode or None, status, product_id),
         )
+
+        if user_id and old:
+            changes = []
+            if old["status"] != status:
+                changes.append(f"estado: {old['status']}→{status}")
+            conn.execute(
+                """INSERT INTO movements
+                   (type, product_id, employee_id, user_id, quantity, notes, warehouse_id)
+                   VALUES ('modificacion', ?, NULL, ?, 1, ?, ?)""",
+                (product_id, user_id,
+                 f"Producto modificado: {old['name']}. {' | '.join(changes)}" if changes else f"Producto modificado: {old['name']}",
+                 warehouse_id),
+            )
+
         conn.commit()
         _invalidate_prefix("units_by_model")
         _invalidate_prefix("products_grouped")
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
 
 
-def update_product_group(old_name, old_brand, new_name, new_brand, supplier_id):
+def update_product_group(old_name, old_brand, new_name, new_brand, supplier_id, user_id=None, warehouse_id=None):
     """Actualiza nombre, marca y proveedor de todas las unidades de un grupo."""
     conn = get_connection()
     try:
@@ -594,9 +616,24 @@ def update_product_group(old_name, old_brand, new_name, new_brand, supplier_id):
                WHERE name=? AND COALESCE(brand,'')=? AND status!='inactivo'""",
             (new_name, new_brand, supplier_id or None, old_name, old_brand),
         )
+        if user_id:
+            changes = []
+            if old_name != new_name:
+                changes.append(f"nombre: {old_name}→{new_name}")
+            if old_brand != new_brand:
+                changes.append(f"marca: {old_brand}→{new_brand}")
+            conn.execute(
+                """INSERT INTO movements
+                   (type, product_id, employee_id, user_id, quantity, notes, warehouse_id)
+                   VALUES ('modificacion', (SELECT MIN(id) FROM products WHERE name=? AND status!='inactivo'), NULL, ?, 1, ?, ?)""",
+                (new_name, user_id, f"Grupo modificado: {' | '.join(changes)}", warehouse_id),
+            )
         conn.commit()
         _invalidate_prefix("units_by_model")
         _invalidate_prefix("products_grouped")
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
 
@@ -637,9 +674,11 @@ def deactivate_product(product_id):
             conn.close()
 
 
-def delete_product(product_id):
-    """Elimina físicamente un producto solo si no tiene movimientos asociados.
-    Para productos con movimientos, usar deactivate_product() en su lugar."""
+def delete_product(product_id, user_id=None, notes="", warehouse_id=None):
+    """Elimina o desactiva un producto.
+    Sin movimientos → DELETE físico.
+    Con movimientos → status='inactivo'.
+    Si se proporciona user_id, registra movimiento de eliminacion."""
     conn = None
     try:
         conn = get_connection()
@@ -649,12 +688,28 @@ def delete_product(product_id):
         )
         movement_count = cursor.fetchone()[0]
 
-        if movement_count > 0:
-            raise ValueError(
-                f"No se puede eliminar el producto porque tiene {movement_count} movimientos asociados. Use la función de baja en su lugar."
+        prod = conn.execute(
+            "SELECT name, COALESCE(brand,'') AS brand FROM products WHERE id=?",
+            (product_id,),
+        ).fetchone()
+        prod_name = f"{prod['name']} ({prod['brand']})" if prod else str(product_id)
+
+        if user_id:
+            conn.execute(
+                """INSERT INTO movements
+                   (type, product_id, employee_id, user_id, quantity, notes, warehouse_id)
+                   VALUES ('eliminacion', 0, NULL, ?, 1, ?, ?)""",
+                (user_id, notes or f"Producto eliminado: {prod_name}", warehouse_id),
             )
 
-        conn.execute("DELETE FROM products WHERE id=?", (product_id,))
+        if movement_count > 0:
+            conn.execute(
+                "UPDATE products SET status='inactivo', updated_at=datetime('now','localtime') WHERE id=?",
+                (product_id,),
+            )
+        else:
+            conn.execute("DELETE FROM products WHERE id=?", (product_id,))
+
         conn.commit()
         _invalidate_prefix("units_by_model")
         _invalidate_prefix("products_grouped")
@@ -667,7 +722,7 @@ def delete_product(product_id):
             conn.close()
 
 
-def delete_product_group(name, brand):
+def delete_product_group(name, brand, user_id=None, notes="", warehouse_id=None):
     """Elimina/desactiva todas las unidades de un grupo (name+brand).
     Sin movimientos → DELETE físico. Con movimientos → status='inactivo'.
     Retorna (eliminados: int, desactivados: int)."""
@@ -692,6 +747,15 @@ def delete_product_group(name, brand):
                     (row["id"],),
                 )
                 desactivados += 1
+        if user_id:
+            conn.execute(
+                """INSERT INTO movements
+                   (type, product_id, employee_id, user_id, quantity, notes, warehouse_id)
+                   VALUES ('eliminacion_grupo', 0, NULL, ?, ?, ?, ?)""",
+                (user_id, eliminados + desactivados,
+                 notes or f"Grupo eliminado: {name} ({brand}). {eliminados} eliminados, {desactivados} desactivados",
+                 warehouse_id),
+            )
         conn.commit()
         _invalidate_prefix("units_by_model")
         _invalidate_prefix("products_grouped")
@@ -717,18 +781,18 @@ def get_all_movements(search="", limit=200, warehouse_id=None):
             params.append(warehouse_id)
         params.append(limit)
         rows = conn.execute(
-                f"""
-                SELECT m.id, m.type, m.timestamp, m.quantity, m.employee_id,
-                       p.name || ' (' || COALESCE(p.barcode, p.serial, '') || ')' AS product,
-                       COALESCE(e.name, '-') AS employee,
-                       u.username AS registered_by, m.notes
-                FROM movements m
-                JOIN products p ON m.product_id = p.id
-                LEFT JOIN employees e ON m.employee_id = e.id
-                JOIN users u ON m.user_id = u.id
-                WHERE (m.type LIKE ? OR p.name LIKE ? OR p.barcode LIKE ? OR e.name LIKE ?)
-                {wh_filter}
-                ORDER BY m.id DESC LIMIT ?
+            f"""
+            SELECT m.id, m.type, m.timestamp, m.quantity, m.employee_id,
+                   COALESCE(p.name || ' (' || COALESCE(p.barcode, p.serial, '') || ')', m.notes) AS product,
+                   COALESCE(e.name, '-') AS employee,
+                   u.username AS registered_by, m.notes
+            FROM movements m
+            LEFT JOIN products p ON m.product_id = p.id
+            LEFT JOIN employees e ON m.employee_id = e.id
+            JOIN users u ON m.user_id = u.id
+            WHERE (m.type LIKE ? OR COALESCE(p.name,'') LIKE ? OR COALESCE(p.barcode,'') LIKE ? OR COALESCE(e.name,'') LIKE ?)
+            {wh_filter}
+            ORDER BY m.id DESC LIMIT ?
             """,
             params,
         ).fetchall()
@@ -923,15 +987,16 @@ def get_movement_available_products(warehouse_id=None):
             SELECT p.name, COALESCE(p.brand,'') AS brand,
                    MAX(p.unit) AS unit,
                    CASE
-                       WHEN MAX(CASE WHEN COALESCE(p.serial,'') != '' THEN 1 ELSE 0 END) = 1
+                       WHEN MAX(p.unit) = 'und' AND MAX(CASE WHEN COALESCE(p.serial,'') != '' THEN 1 ELSE 0 END) = 1
                        THEN SUM(CASE WHEN p.status='disponible' THEN 1 ELSE 0 END)
                        ELSE COALESCE(SUM(CASE WHEN p.status='disponible' THEN p.quantity ELSE 0 END), 0)
                    END AS available
             FROM products p
             WHERE p.status != 'inactivo'
               AND (
-                   (COALESCE(p.serial,'') != '' AND p.status = 'disponible')
-                   OR (COALESCE(p.serial,'') = '' AND p.quantity > 0)
+                   (p.unit = 'und' AND COALESCE(p.serial,'') != '' AND p.status = 'disponible')
+                   OR (COALESCE(p.unit, 'und') != 'und' AND p.quantity > 0)
+                   OR (p.unit = 'und' AND COALESCE(p.serial,'') = '' AND p.quantity > 0)
                   )
               {wh_filter}
             GROUP BY p.name, COALESCE(p.brand,'')
@@ -960,21 +1025,21 @@ def get_products_pending_return_grouped(warehouse_id=None):
             SELECT p.name, COALESCE(p.brand,'') AS brand,
                    MAX(p.unit) AS unit,
                    CASE
-                       WHEN MAX(CASE WHEN COALESCE(p.serial,'') != '' THEN 1 ELSE 0 END) = 1
+                       WHEN MAX(p.unit) = 'und' AND MAX(CASE WHEN COALESCE(p.serial,'') != '' THEN 1 ELSE 0 END) = 1
                        THEN SUM(CASE WHEN p.status='no disponible' THEN 1 ELSE 0 END)
-                       ELSE COALESCE((
-                           SELECT SUM(s.qty - d.qty)
-                           FROM (
-                               SELECT product_id, SUM(quantity) AS qty FROM movements
-                               WHERE type = 'salida' GROUP BY product_id
-                           ) s
-                           LEFT JOIN (
-                               SELECT product_id, SUM(quantity) AS qty FROM movements
-                               WHERE type = 'devolucion' GROUP BY product_id
-                           ) d ON s.product_id = d.product_id
-                           JOIN products p2 ON s.product_id = p2.id
-                           WHERE p2.name = p.name AND COALESCE(p2.brand,'') = COALESCE(p.brand,'')
-                       ), 0)
+                   ELSE COALESCE((
+                       SELECT SUM(COALESCE(s.qty, 0) - COALESCE(d.qty, 0))
+                       FROM (
+                           SELECT product_id, SUM(quantity) AS qty FROM movements
+                           WHERE type = 'salida' GROUP BY product_id
+                       ) s
+                       LEFT JOIN (
+                           SELECT product_id, SUM(quantity) AS qty FROM movements
+                           WHERE type = 'devolucion' GROUP BY product_id
+                       ) d ON s.product_id = d.product_id
+                       JOIN products p2 ON s.product_id = p2.id
+                       WHERE p2.name = p.name AND COALESCE(p2.brand,'') = COALESCE(p.brand,'')
+                   ), 0)
                    END AS pending
             FROM products p
             WHERE p.status != 'inactivo'
@@ -1186,7 +1251,10 @@ def get_movement_counts():
                 COALESCE(SUM(type='entrada'), 0) entrada,
                 COALESCE(SUM(type='salida'), 0) salida,
                 COALESCE(SUM(type='devolucion'), 0) devolucion,
-                COALESCE(SUM(type='asignacion'), 0) asignacion
+                COALESCE(SUM(type='asignacion'), 0) asignacion,
+                COALESCE(SUM(type='eliminacion'), 0) eliminacion,
+                COALESCE(SUM(type='eliminacion_grupo'), 0) eliminacion_grupo,
+                COALESCE(SUM(type='modificacion'), 0) modificacion
             FROM movements
         """).fetchone()
         return dict(row)
@@ -1227,7 +1295,10 @@ def get_dashboard_stats(warehouse_id=None):
                 COALESCE(SUM(type='entrada'), 0) entrada,
                 COALESCE(SUM(type='salida'), 0) salida,
                 COALESCE(SUM(type='devolucion'), 0) devolucion,
-                COALESCE(SUM(type='asignacion'), 0) asignacion
+                COALESCE(SUM(type='asignacion'), 0) asignacion,
+                COALESCE(SUM(type='eliminacion'), 0) eliminacion,
+                COALESCE(SUM(type='eliminacion_grupo'), 0) eliminacion_grupo,
+                COALESCE(SUM(type='modificacion'), 0) modificacion
             FROM movements m
             WHERE 1=1 {wh_filter_m}
             """,
@@ -1239,11 +1310,11 @@ def get_dashboard_stats(warehouse_id=None):
         movements = conn.execute(
             f"""
             SELECT m.id, m.type, m.timestamp, m.quantity,
-                   p.name || ' (' || COALESCE(p.barcode, p.serial, '') || ')' AS product,
+                   COALESCE(p.name || ' (' || COALESCE(p.barcode, p.serial, '') || ')', m.notes) AS product,
                    COALESCE(e.name, '-') AS employee,
                    u.username AS registered_by, m.notes
             FROM movements m
-            JOIN products p ON m.product_id = p.id
+            LEFT JOIN products p ON m.product_id = p.id
             LEFT JOIN employees e ON m.employee_id = e.id
             JOIN users u ON m.user_id = u.id
             WHERE 1=1 {wh_filter_m}

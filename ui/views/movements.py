@@ -95,6 +95,8 @@ class MovementsView(ctk.CTkFrame):
             ("salida", "Salida", NARANJA_SELECCION, HOVER_NARANJA_SEL),
             ("devolucion", "Devolución", AMARILLO_AMBAR, HOVER_AMBAR),
             ("asignacion", "Asignación", AZUL_CIELO, HOVER_MOV_ASIG),
+            ("eliminacion", "Eliminación", INACTIVO_BG, HOVER_MOV_CANCEL),
+            ("modificacion", "Modificación", AZUL_MARINO, AZUL_NOCHE),
         ]
         for val, label, fg, hover in type_defs:
             btn = ctk.CTkButton(
@@ -151,6 +153,8 @@ class MovementsView(ctk.CTkFrame):
             "salida": (NARANJA_SELECCION, HOVER_NARANJA_SEL),
             "devolucion": (AMARILLO_AMBAR, HOVER_AMBAR),
             "asignacion": (AZUL_CIELO, HOVER_MOV_ASIG),
+            "eliminacion": (INACTIVO_BG, HOVER_MOV_CANCEL),
+            "modificacion": (AZUL_MARINO, AZUL_NOCHE),
         }
         for val, btn in self._type_btns.items():
             fg, _ = styles[val]
@@ -409,7 +413,7 @@ class _MovementDialog(ctk.CTkToplevel):
         self.warehouse_id = warehouse_id
         self.title("Registrar Movimiento")
         self.geometry("900x750")
-        self.minsize(700, 600)
+        self.minsize(860, 650)
         self.resizable(True, True)
         self.configure(fg_color=BLANCO_CALIDO)
         self.transient(parent)
@@ -497,7 +501,7 @@ class _MovementDialog(ctk.CTkToplevel):
             left,
             products,
             "key",
-            lambda g: f"{g['name']} ({g.get('brand', '') or '—'}) — disp: {g['available']} {g['unit']}",
+            lambda g: f"{g['name']}{' · ' + g['brand'] if g.get('brand') else ''}  —  {g['available']} {g['unit']} disp.",
             placeholder="Buscar producto...",
             fg_color=FONDO_MULTISELECT,
             show_quantity=True,
@@ -512,12 +516,21 @@ class _MovementDialog(ctk.CTkToplevel):
             font=ctk.CTkFont(size=14, weight="bold"),
             text_color=TEXTO_MOV_FIELD,
         ).pack(anchor="w", pady=(10, 5))
+        search_serial_frame = ctk.CTkFrame(self._serial_frame, fg_color="white")
+        search_serial_frame.pack(fill="x")
         ctk.CTkLabel(
-            self._serial_frame,
-            text="Marca los seriales a devolver",
-            font=ctk.CTkFont(size=11),
-            text_color=TEXTO_SECUNDARIO,
-        ).pack(anchor="w")
+            search_serial_frame, text="🔍", text_color=TEXTO_SECUNDARIO
+        ).pack(side="left", padx=(6, 2))
+        self._serial_search_var = ctk.StringVar()
+        self._serial_search_var.trace_add("write", lambda *_: self._load_serials_pending())
+        ctk.CTkEntry(
+            search_serial_frame,
+            textvariable=self._serial_search_var,
+            placeholder_text="Buscar por nombre o serial...",
+            border_width=0,
+            fg_color="white",
+            text_color=TEXTO_MOV_FIELD,
+        ).pack(side="left", fill="x", expand=True, padx=(0, 8))
         self._serial_inner = ctk.CTkScrollableFrame(
             self._serial_frame, fg_color="white", height=200
         )
@@ -615,16 +628,30 @@ class _MovementDialog(ctk.CTkToplevel):
         ).pack(side="left", expand=True, padx=5)
 
         self.grab_set()
+        self.after(100, self._fit_size)
+
+    def _fit_size(self):
+        """Ajusta la ventana al tamaño natural de su contenido."""
+        self.update_idletasks()
+        w = self.winfo_reqwidth() + 20
+        h = self.winfo_reqheight() + 20
+        # No exceder el tamaño de la pantalla
+        sw = self.winfo_screenwidth()
+        sh = self.winfo_screenheight()
+        self.geometry(f"{min(w, sw)}x{min(h, sh)}")
 
     def _on_type_change(self, type_):
+        self._prod_select.pack_forget()
+        self._serial_frame.pack_forget()
         if type_ == "salida":
             self._emp_frame.pack(fill="x", pady=(0, 10))
             self._veh_frame.pack(fill="x", pady=(0, 10))
-            self._serial_frame.pack_forget()
+            self._prod_select.pack(fill="both", expand=True, padx=15, pady=(0, 15))
             grouped = get_movement_available_products(warehouse_id=self.warehouse_id)
         else:
             self._emp_frame.pack_forget()
             self._veh_frame.pack_forget()
+            self._prod_select.pack(fill="x", padx=15, pady=(0, 5))
             self._serial_frame.pack(fill="both", expand=True, padx=15, pady=(0, 10))
             self._load_serials_pending()
             grouped = get_products_pending_return_grouped(warehouse_id=self.warehouse_id)
@@ -639,7 +666,7 @@ class _MovementDialog(ctk.CTkToplevel):
 
         metric = "available" if type_ == "salida" else "pending"
         label_fn = lambda g, m=metric: (
-            f"{g['name']} ({g.get('brand', '') or '—'}) — {m}: {g.get(m, 0)} {g['unit']}"
+            f"{g['name']}{' · ' + g['brand'] if g.get('brand') else ''}  —  {g.get(m, 0)} {g['unit']} {'disp.' if m == 'available' else 'pend.'}"
         )
         self._prod_select._items = products
         self._prod_select._item_label = label_fn
@@ -647,6 +674,7 @@ class _MovementDialog(ctk.CTkToplevel):
         self._prod_select._selected = set()
         self._prod_select._quantities = {}
         self._prod_select._filter_items()
+        self.after(50, self._fit_size)
 
     def _load_serials_pending(self):
         """Carga la lista de seriales en estado 'no disponible' (pendientes de devolucion)."""
@@ -655,7 +683,10 @@ class _MovementDialog(ctk.CTkToplevel):
         self._serial_checkvars = {}
         self._serial_ids = {}
 
-        serials = [dict(s) for s in get_serials_pending_return(warehouse_id=self.warehouse_id)]
+        search = self._serial_search_var.get().strip() if hasattr(self, "_serial_search_var") else ""
+        serials = [dict(s) for s in get_serials_pending_return(
+            search=search, warehouse_id=self.warehouse_id
+        )]
         if not serials:
             ctk.CTkLabel(
                 self._serial_inner,
