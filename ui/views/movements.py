@@ -11,9 +11,11 @@ from database.repository import (
     get_movement_available_products,
     get_products_pending_return_grouped,
     get_serials_pending_return,
-    create_grouped_movement,
-    create_quantity_return,
-    return_serial,
+    apply_salida_quantity,
+    apply_salida_serial,
+    apply_devolucion_quantity,
+    apply_devolucion_serial,
+    create_compound_movement,
     update_movement,
     delete_movement,
 )
@@ -725,6 +727,8 @@ class _MovementDialog(ctk.CTkToplevel):
         notes = self.notes_e.get().strip()
         selected_employees = self._emp_select.get_selected()
 
+        items = []
+
         if type_ == "salida":
             if not selected_employees:
                 messagebox.showwarning(
@@ -745,18 +749,23 @@ class _MovementDialog(ctk.CTkToplevel):
                     continue
                 name = g["name"]
                 brand = g.get("brand", "")
-                for employee_id in selected_employees:
-                    try:
-                        create_grouped_movement(
-                            type_, name, brand, quantity,
-                            employee_id, self.current_user["id"], notes,
-                            warehouse_id=self.warehouse_id,
-                        )
-                    except ValueError as e:
-                        messagebox.showerror("Error", str(e), parent=self)
-                        return
+                try:
+                    if g.get("unit") == "und" and g.get("available", 0) > 0:
+                        result = apply_salida_serial(name, brand, quantity, warehouse_id=self.warehouse_id)
+                    else:
+                        result = apply_salida_quantity(name, brand, quantity, warehouse_id=self.warehouse_id)
+                    items.append(result)
+                except ValueError as e:
+                    messagebox.showerror("Error", str(e), parent=self)
+                    return
+            employee_id = selected_employees[0]
+            create_compound_movement(
+                "salida", self.current_user["id"], items, notes,
+                warehouse_id=self.warehouse_id, employee_id=employee_id,
+            )
+
         else:
-            # Devolucion: procesar cantidad + seriales
+            # Devolucion: procesar cantidad + seriales en un solo movimiento
             selected_raw = self._prod_select.get_selected()
             has_qty = bool(selected_raw)
             has_serials = any(
@@ -779,26 +788,31 @@ class _MovementDialog(ctk.CTkToplevel):
                     if not g:
                         continue
                     try:
-                        create_quantity_return(
+                        apply_devolucion_quantity(
                             g["name"], g.get("brand", ""), quantity,
-                            self.current_user["id"], notes,
                             warehouse_id=self.warehouse_id,
                         )
+                        items.append({"name": g["name"], "qty": quantity, "unit": g.get("unit", "und")})
                     except ValueError as e:
                         messagebox.showerror("Error", str(e), parent=self)
                         return
 
             if has_serials:
-                for pid, var in self._serial_checkvars.items():
-                    if var.get():
-                        try:
-                            return_serial(
-                                pid, self.current_user["id"], notes,
-                                warehouse_id=self.warehouse_id,
-                            )
-                        except ValueError as e:
-                            messagebox.showerror("Error", str(e), parent=self)
-                            return
+                checked = [pid for pid, var in self._serial_checkvars.items() if var.get()]
+                if checked:
+                    try:
+                        result = apply_devolucion_serial(checked, warehouse_id=self.warehouse_id)
+                        if result:
+                            items.append(result)
+                    except ValueError as e:
+                        messagebox.showerror("Error", str(e), parent=self)
+                        return
+
+            if items:
+                create_compound_movement(
+                    "devolucion", self.current_user["id"], items, notes,
+                    warehouse_id=self.warehouse_id,
+                )
 
         self.on_save()
         self.destroy()

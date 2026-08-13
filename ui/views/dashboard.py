@@ -233,6 +233,69 @@ class DashboardView(ctk.CTkFrame):
             self.after_cancel(self._load_after_id)
         self._load_after_id = self.after(10, self._load_data)
 
+    def _show_movement_detail(self, mov):
+        """Ventana con detalle completo de un movimiento."""
+        from ui.widgets import center_dialog
+        type_colors = {
+            "entrada": (AZUL_CERULEO, "📥"),
+            "salida": (NARANJA_SELECCION, "📤"),
+            "devolucion": (AMARILLO_AMBAR, "↩️"),
+            "asignacion": (AZUL_CIELO, "📋"),
+        }
+        tc = type_colors.get(mov.get("type", ""), (AZUL_MARINO, "📋"))
+        d = ctk.CTkToplevel(self)
+        d.title("Detalle del Movimiento")
+        d.geometry("520x380")
+        d.resizable(False, False)
+        d.configure(fg_color=BLANCO_CALIDO)
+        d.transient(self)
+
+        hdr = ctk.CTkFrame(d, fg_color=AZUL_NOCHE, height=56)
+        hdr.pack(fill="x")
+        hdr.pack_propagate(False)
+        ctk.CTkLabel(
+            hdr,
+            text=f"{tc[1]}  {mov.get('type', '').upper()}  #{mov.get('id', '')}",
+            font=ctk.CTkFont(size=20, weight="bold"),
+            text_color="white",
+        ).pack(side="left", padx=20, pady=14)
+
+        body = ctk.CTkFrame(d, fg_color="white", corner_radius=8)
+        body.pack(fill="both", expand=True, padx=16, pady=12)
+
+        info = [
+            ("Producto", mov.get("product", "—")),
+            ("Cantidad", str(mov.get("quantity", 0))),
+            ("Empleado", mov.get("employee", "—")),
+            ("Registrado por", mov.get("registered_by", "—")),
+            ("Fecha/Hora", mov.get("timestamp", "—")),
+            ("Notas", mov.get("notes", "—") or "—"),
+        ]
+        for label, val in info:
+            row = ctk.CTkFrame(body, fg_color="transparent")
+            row.pack(fill="x", padx=14, pady=4)
+            ctk.CTkLabel(
+                row, text=label + ":",
+                font=ctk.CTkFont(size=13, weight="bold"),
+                text_color=AZUL_MARINO, width=120, anchor="w",
+            ).pack(side="left")
+            ctk.CTkLabel(
+                row, text=val,
+                font=ctk.CTkFont(size=13),
+                text_color=GRIS_AZULADO, anchor="w",
+            ).pack(side="left", padx=(8, 0))
+
+        ctk.CTkButton(
+            d, text="✕ Cerrar", height=36,
+            font=ctk.CTkFont(size=13, weight="bold"),
+            fg_color=NARANJA_INTENSO, hover_color=HOVER_NARANJA_INT,
+            text_color="white",
+            command=d.destroy,
+        ).pack(padx=16, pady=(0, 12))
+
+        center_dialog(d)
+        d.after(50, d.grab_set)
+
     def _load_data(self):
         """Fetch real data async (deferred via after). Runs off the critical path."""
         self.loading_indicator.grid()
@@ -251,6 +314,7 @@ class DashboardView(ctk.CTkFrame):
                 "asignacion_count": "asignacion",
             }
             counts = {**product_counts, **movement_counts}
+            self._recent_movements = [dict(m) for m in movements]
             for key, lbl in self._stat_vars.items():
                 lookup_key = movement_key_map.get(key, key)
                 val = int(counts.get(lookup_key) or 0)
@@ -259,7 +323,10 @@ class DashboardView(ctk.CTkFrame):
             for widget in self.movements_content.winfo_children():
                 widget.destroy()
 
-            make_dashboard_movements_list(self.movements_content, movements)
+            make_dashboard_movements_list(
+                self.movements_content, movements,
+                on_click=self._show_movement_detail,
+            )
             self.movements_subheader.configure(
                 text=f"Mostrando {len(movements)} movimientos recientes"
             )

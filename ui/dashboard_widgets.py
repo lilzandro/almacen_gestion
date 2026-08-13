@@ -7,7 +7,7 @@ def setup_dashboard_movements_style():
     pass
 
 
-def create_movement_card(parent, movement_data, index):
+def create_movement_card(parent, movement_data, index, on_click=None):
     movement_data = dict(movement_data)
 
     type_colors = {
@@ -78,15 +78,32 @@ def create_movement_card(parent, movement_data, index):
     )
     time_label.grid(row=1, column=1, sticky="w", pady=(2, 0))
 
+    notes = movement_data.get("notes", "") or ""
+    # Extraer resumen del formato "50 m Fibra | 3 und ROUTER [...]"
+    summary = ""
+    if " | " in notes:
+        parts = notes.split(" | ")
+        # Tomar solo la parte del resumen (despues de notas del usuario)
+        for p in parts:
+            if any(c.isdigit() for c in p) and any(c.isalpha() for c in p):
+                summary = summary + (" + " if summary else "") + p
+    if not summary:
+        summary = movement_data.get("product", "")
+    # Truncar si es muy largo
+    if len(summary) > 85:
+        summary = summary[:82] + "..."
+
     product_label = ctk.CTkLabel(
         content_frame,
-        text=f"📦 {movement_data['product']}",
-        font=ctk.CTkFont(size=18),
+        text=f"📦 {summary}",
+        font=ctk.CTkFont(size=16),
         text_color=TEXTO_DASH_LABEL,
         anchor="w",
+        wraplength=400,
     )
     product_label.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(12, 6))
 
+    row_idx = 3
     employee = movement_data.get("employee") or ""
     if employee and employee.strip() and employee != "-":
         ctk.CTkLabel(
@@ -95,7 +112,8 @@ def create_movement_card(parent, movement_data, index):
             font=ctk.CTkFont(size=17),
             text_color=TEXTO_DASH_LABEL,
             anchor="w",
-        ).grid(row=3, column=0, columnspan=2, sticky="ew", pady=(0, 6))
+        ).grid(row=row_idx, column=0, columnspan=2, sticky="ew", pady=(0, 6))
+        row_idx += 1
 
     registered = movement_data.get("registered_by") or ""
     if registered:
@@ -105,10 +123,20 @@ def create_movement_card(parent, movement_data, index):
             font=ctk.CTkFont(size=16),
             text_color=TEXTO_DASH_SEC,
             anchor="w",
-        ).grid(row=4, column=0, columnspan=2, sticky="ew", pady=(0, 6))
+        ).grid(row=row_idx, column=0, columnspan=2, sticky="ew", pady=(0, 6))
 
+    if on_click:
+        def _click(e, md=movement_data):
+            on_click(md)
+        for w in [card, color_stripe, content_frame, icon_label, type_label,
+                  time_label, product_label]:
+            try:
+                w.configure(cursor="hand2")
+                w.bind("<Button-1>", _click, add="+")
+            except Exception:
+                pass
 
-def make_dashboard_movements_list(parent, movements_data, bg_color="#FFFFFF"):
+def make_dashboard_movements_list(parent, movements_data, bg_color="#FFFFFF", on_click=None):
     container = ctk.CTkFrame(
         parent,
         fg_color=bg_color,
@@ -148,7 +176,7 @@ def make_dashboard_movements_list(parent, movements_data, bg_color="#FFFFFF"):
             return
         end = min(start + batch_size, len(movements_data))
         for i in range(start, end):
-            create_movement_card(scrollable_frame, movements_data[i], i)
+            create_movement_card(scrollable_frame, movements_data[i], i, on_click=on_click)
         if end < len(movements_data):
             parent.after(1, _build_batch, end, batch_size)
 
