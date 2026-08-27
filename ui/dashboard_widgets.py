@@ -4,7 +4,7 @@ from ui.colors import *
 
 
 def setup_dashboard_movements_style():
-    pass
+    """Reservado para estilos de la lista de movimientos del dashboard."""
 
 
 def create_movement_card(parent, movement_data, index, on_click=None):
@@ -78,17 +78,8 @@ def create_movement_card(parent, movement_data, index, on_click=None):
     )
     time_label.grid(row=1, column=1, sticky="w", pady=(2, 0))
 
-    notes = movement_data.get("notes", "") or ""
-    # Extraer resumen del formato "50 m Fibra | 3 und ROUTER [...]"
-    summary = ""
-    if " | " in notes:
-        parts = notes.split(" | ")
-        # Tomar solo la parte del resumen (despues de notas del usuario)
-        for p in parts:
-            if any(c.isdigit() for c in p) and any(c.isalpha() for c in p):
-                summary = summary + (" + " if summary else "") + p
-    if not summary:
-        summary = movement_data.get("product", "")
+    product = movement_data.get("product", "") or movement_data.get("notes", "") or "—"
+    summary = product
     # Truncar si es muy largo
     if len(summary) > 85:
         summary = summary[:82] + "..."
@@ -136,6 +127,8 @@ def create_movement_card(parent, movement_data, index, on_click=None):
             except Exception:
                 pass
 
+    return card
+
 def make_dashboard_movements_list(parent, movements_data, bg_color="#FFFFFF", on_click=None):
     container = ctk.CTkFrame(
         parent,
@@ -162,6 +155,25 @@ def make_dashboard_movements_list(parent, movements_data, bg_color="#FFFFFF", on
     scrollable_frame.bind("<Button-5>",
         lambda e: scrollable_frame._parent_canvas.yview_scroll(1, "units"))
 
+    def _bind_wheel(widget):
+        """Scroll de rueda funciona también sobre cards y sus hijos."""
+        try:
+            widget.bind("<MouseWheel>", _on_mousewheel, add="+")
+            widget.bind(
+                "<Button-4>",
+                lambda e: scrollable_frame._parent_canvas.yview_scroll(-1, "units"),
+                add="+",
+            )
+            widget.bind(
+                "<Button-5>",
+                lambda e: scrollable_frame._parent_canvas.yview_scroll(1, "units"),
+                add="+",
+            )
+        except Exception:
+            pass
+        for child in widget.winfo_children():
+            _bind_wheel(child)
+
     if not movements_data:
         ctk.CTkLabel(
             scrollable_frame,
@@ -171,19 +183,23 @@ def make_dashboard_movements_list(parent, movements_data, bg_color="#FFFFFF", on
         ).pack(pady=100)
         return container
 
-    def _build_batch(start=0, batch_size=8):
-        if not scrollable_frame.winfo_exists():
+    def _build_batch(start=0, batch_size=10):
+        # Mínimo 10 cards de visualizaciones por lote
+        # View o contenedor destruidos durante la carga -> abortar
+        if not scrollable_frame.winfo_exists() or not parent.winfo_exists():
             return
         end = min(start + batch_size, len(movements_data))
         for i in range(start, end):
-            create_movement_card(scrollable_frame, movements_data[i], i, on_click=on_click)
+            card = create_movement_card(
+                scrollable_frame, movements_data[i], i, on_click=on_click
+            )
+            _bind_wheel(card)
         if end < len(movements_data):
-            parent.after(1, _build_batch, end, batch_size)
+            try:
+                parent.after(1, _build_batch, end, batch_size)
+            except Exception:
+                return
 
     _build_batch()
 
     return container
-
-
-def clear_dashboard_movements_list(container):
-    pass

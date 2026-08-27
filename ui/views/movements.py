@@ -332,7 +332,18 @@ class _SearchableMultiSelect(ctk.CTkFrame):
         self._display_items = []
         self._filter_items()
 
+    def _save_quantities(self):
+        """Guarda los valores escritos en las casillas antes de reconstruir."""
+        for item_id, entry in self._qty_entries.items():
+            try:
+                val = int(entry.get().strip())
+                if val >= 1:
+                    self._quantities[item_id] = val
+            except (ValueError, TypeError):
+                pass
+
     def _filter_items(self):
+        self._save_quantities()
         for w in self._list_frame.winfo_children():
             w.destroy()
         self._checkboxes = {}
@@ -750,7 +761,12 @@ class _MovementDialog(ctk.CTkToplevel):
                 name = g["name"]
                 brand = g.get("brand", "")
                 try:
-                    if g.get("unit") == "und" and g.get("available", 0) > 0:
+                    is_serial = (
+                        g.get("unit") == "und"
+                        and g.get("has_serial")
+                        and not g.get("total_quantity")
+                    )
+                    if is_serial:
                         result = apply_salida_serial(name, brand, quantity, warehouse_id=self.warehouse_id)
                     else:
                         result = apply_salida_quantity(name, brand, quantity, warehouse_id=self.warehouse_id)
@@ -758,6 +774,12 @@ class _MovementDialog(ctk.CTkToplevel):
                 except ValueError as e:
                     messagebox.showerror("Error", str(e), parent=self)
                     return
+            if not items:
+                messagebox.showwarning(
+                    "Aviso", "Ingresa cantidades válidas para al menos un producto.",
+                    parent=self,
+                )
+                return
             employee_id = selected_employees[0]
             create_compound_movement(
                 "salida", self.current_user["id"], items, notes,
@@ -788,11 +810,11 @@ class _MovementDialog(ctk.CTkToplevel):
                     if not g:
                         continue
                     try:
-                        apply_devolucion_quantity(
+                        result = apply_devolucion_quantity(
                             g["name"], g.get("brand", ""), quantity,
                             warehouse_id=self.warehouse_id,
                         )
-                        items.append({"name": g["name"], "qty": quantity, "unit": g.get("unit", "und")})
+                        items.append(result)
                     except ValueError as e:
                         messagebox.showerror("Error", str(e), parent=self)
                         return

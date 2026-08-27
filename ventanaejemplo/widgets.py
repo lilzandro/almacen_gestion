@@ -301,13 +301,28 @@ class SerialTable(ctk.CTkFrame):
         row["serial"] = serial
 
         if self.show_mac:
+            mac_var = ctk.StringVar()
+            _upd = [False]
+
+            def _fmt(*_):
+                if _upd[0]:
+                    return
+                raw = mac_var.get()
+                clean = "".join(c for c in raw if c.isalnum())[:12].upper()
+                _upd[0] = True
+                mac_var.set("-".join(clean[i : i + 2] for i in range(0, len(clean), 2)))
+                _upd[0] = False
+
+            mac_var.trace_add("write", _fmt)
             mac = ctk.CTkEntry(self.holder, height=32, font=self.fonts["input_mono"],
                                placeholder_text="AA-BB-CC-DD-EE-FF", fg_color=WHITE,
                                border_color=LINE, border_width=1, corner_radius=RADIUS_FIELD,
-                               text_color=INK, placeholder_text_color=INK_3)
+                               text_color=INK, placeholder_text_color=INK_3,
+                               textvariable=mac_var)
             _focus_ring(mac)
             mac.grid(row=rr, column=self._col_index("mac"), padx=6, pady=5, sticky="ew")
             row["mac"] = mac
+            row["mac_var"] = mac_var
 
         _focus_ring(serial)
         xbtn = ctk.CTkButton(self.holder, text="✕", width=28, height=28,

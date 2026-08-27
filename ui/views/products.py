@@ -1030,7 +1030,8 @@ class _GroupRow(ctk.CTkFrame):
             print(
                 f"[DBG] {raw['name']}: unit={unit} unit_count={unit_count} total_qty={total_qty} disponible_count={raw['disponible_count']} all_keys={list(raw.keys())}"
             )
-        if unit == "und":
+        has_serial = raw.get("has_serial", 0)
+        if unit == "und" and has_serial and not total_qty:
             count = raw["disponible_count"]
         else:
             count = total_qty if total_qty else unit_count
@@ -1044,7 +1045,7 @@ class _GroupRow(ctk.CTkFrame):
         ).grid(row=0, column=3, padx=8, sticky="w")
 
         # Col 4: stock pill
-        if unit == "und":
+        if unit == "und" and has_serial and not total_qty:
             stock_count = raw["disponible_count"]
         else:
             stock_count = total_qty if total_qty else raw["disponible_count"]

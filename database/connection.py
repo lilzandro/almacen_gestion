@@ -78,6 +78,16 @@ def initialize_db():
             notes TEXT DEFAULT '',
             timestamp TEXT DEFAULT (datetime('now','localtime'))
         );
+        CREATE TABLE IF NOT EXISTS movement_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            movement_id INTEGER NOT NULL REFERENCES movements(id) ON DELETE CASCADE,
+            product_id INTEGER,
+            name TEXT NOT NULL,
+            brand TEXT DEFAULT '',
+            qty INTEGER NOT NULL DEFAULT 1,
+            unit TEXT DEFAULT 'und',
+            seriales TEXT DEFAULT ''
+        );
     """)
 
     # Agregar columna product_id si no existe (para bases de datos existentes)

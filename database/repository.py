@@ -1,8 +1,26 @@
+import re
 import time as _time
 from database.connection import get_connection
 
 _cache: dict = {}
 _CACHE_TTL = 5  # segundos
+
+_SERIAL_BLOCK = re.compile(r"\[[^\]]*\]")
+_SERIAL_MENTION = re.compile(r"[-–—]\s*Serial(?:es)?:\s*[^|\[\]]*", re.IGNORECASE)
+_SERIAL_MENTION2 = re.compile(r"Serial(?:es)?:\s*[^|\[\]]*", re.IGNORECASE)
+
+
+def _clean_product_label(label):
+    """Quita seriales de la etiqueta de producto (bloques [serial] y menciones
+    "Serial: ...") para no exponerlos en tablas/cards."""
+    if not label:
+        return label
+    s = _SERIAL_BLOCK.sub("", label)
+    s = _SERIAL_MENTION.sub("", s)
+    s = _SERIAL_MENTION2.sub("", s)
+    s = re.sub(r"\s+", " ", s)
+    s = re.sub(r"\s*[|,;]+\s*$", "", s)
+    return s.strip(" |,;")
 
 
 def _cached(key, fn):
@@ -320,6 +338,7 @@ def get_products_grouped(search="", status_filter="todos", warehouse_id=None):
                 SELECT p.name, COALESCE(p.brand,'') AS brand,
                        COUNT(*) AS unit_count,
                        SUM(CASE WHEN p.status='disponible' THEN 1 ELSE 0 END) AS disponible_count,
+                       MAX(CASE WHEN COALESCE(p.serial,'') != '' THEN 1 ELSE 0 END) AS has_serial,
                        MAX(p.supplier_id) AS supplier_id,
                        COALESCE(MAX(sup.name),'N/A') AS supplier_name,
                        MAX(COALESCE(p.unit,'und')) AS unit,
@@ -783,7 +802,7 @@ def get_all_movements(search="", limit=200, warehouse_id=None):
         rows = conn.execute(
             f"""
             SELECT m.id, m.type, m.timestamp, m.quantity, m.employee_id,
-                   COALESCE(p.name || ' (' || COALESCE(p.barcode, p.serial, '') || ')', m.notes) AS product,
+                   COALESCE(p.name, m.notes) AS product,
                    COALESCE(e.name, '-') AS employee,
                    u.username AS registered_by, m.notes
             FROM movements m
@@ -796,7 +815,59 @@ def get_all_movements(search="", limit=200, warehouse_id=None):
             """,
             params,
         ).fetchall()
-        return rows
+        return [_clean_row_product(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def _clean_row_product(row):
+    d = dict(row)
+    d["product"] = _clean_product_label(d.get("product"))
+    return d
+
+
+def get_movement_detail(movement_id):
+    """Detalle completo de un movimiento para el dialog del dashboard.
+    Devuelve meta + desglose de items (sin seriales) o None si no existe."""
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            """
+            SELECT m.id, m.type, m.timestamp, m.quantity, m.notes,
+                   COALESCE(p.name, '') AS product,
+                   COALESCE(p.brand, '') AS brand,
+                   COALESCE(p.unit, '') AS unit,
+                   COALESCE(e.name, '-') AS employee,
+                   COALESCE(e.cargo, '') AS cargo,
+                   u.username AS registered_by,
+                   COALESCE(w.name, '') AS warehouse
+            FROM movements m
+            LEFT JOIN products p ON m.product_id = p.id
+            LEFT JOIN employees e ON m.employee_id = e.id
+            JOIN users u ON m.user_id = u.id
+            LEFT JOIN warehouses w ON m.warehouse_id = w.id
+            WHERE m.id = ?
+            """,
+            (movement_id,),
+        ).fetchone()
+        if row is None:
+            return None
+
+        detail = dict(row)
+        detail["product"] = _clean_product_label(detail["product"])
+        detail["notes"] = _clean_product_label(detail["notes"])
+
+        items = conn.execute(
+            """
+            SELECT name, brand, qty, unit
+            FROM movement_items
+            WHERE movement_id = ?
+            ORDER BY id
+            """,
+            (movement_id,),
+        ).fetchall()
+        detail["items"] = [dict(i) for i in items]
+        return detail
     finally:
         conn.close()
 
@@ -820,7 +891,8 @@ def create_movement(type_, product_id, employee_id, user_id, quantity, notes,
                     f"Stock insuficiente: disponible {current['quantity']}, solicitado {q}"
                 )
 
-        conn.execute(
+        cursor = conn.cursor()
+        cursor.execute(
             """INSERT INTO movements
                (type, product_id, employee_id, user_id, quantity, notes, warehouse_id)
                VALUES (?,?,?,?,?,?,?)""",
@@ -834,6 +906,19 @@ def create_movement(type_, product_id, employee_id, user_id, quantity, notes,
                 warehouse_id,
             ),
         )
+        movement_id = cursor.lastrowid
+
+        p = conn.execute(
+            "SELECT name, COALESCE(brand,'') AS brand, unit FROM products WHERE id=?",
+            (product_id,),
+        ).fetchone()
+        if p:
+            cursor.execute(
+                """INSERT INTO movement_items
+                   (movement_id, product_id, name, brand, qty, unit, seriales)
+                   VALUES (?, ?, ?, ?, ?, ?, '')""",
+                (movement_id, product_id, p["name"], p["brand"], q, p["unit"]),
+            )
 
         if type_ in ("entrada", "devolucion"):
             quantity_change = q
@@ -986,8 +1071,12 @@ def get_movement_available_products(warehouse_id=None):
             f"""
             SELECT p.name, COALESCE(p.brand,'') AS brand,
                    MAX(p.unit) AS unit,
+                   MAX(CASE WHEN COALESCE(p.serial,'') != '' THEN 1 ELSE 0 END) AS has_serial,
+                   COALESCE(SUM(p.quantity), 0) AS total_quantity,
                    CASE
-                       WHEN MAX(p.unit) = 'und' AND MAX(CASE WHEN COALESCE(p.serial,'') != '' THEN 1 ELSE 0 END) = 1
+                       WHEN MAX(p.unit) = 'und'
+                            AND MAX(CASE WHEN COALESCE(p.serial,'') != '' THEN 1 ELSE 0 END) = 1
+                            AND COALESCE(SUM(p.quantity), 0) = 0
                        THEN SUM(CASE WHEN p.status='disponible' THEN 1 ELSE 0 END)
                        ELSE COALESCE(SUM(CASE WHEN p.status='disponible' THEN p.quantity ELSE 0 END), 0)
                    END AS available
@@ -1010,49 +1099,167 @@ def get_movement_available_products(warehouse_id=None):
         conn.close()
 
 
+def _parse_compound_notes(notes):
+    """Parsea notas de movimiento compuesto:
+    '30 m fibra optica | 2 und ROUTER [SN1, SN2]'
+    Retorna lista de dicts {name, qty, unit, is_serial}."""
+    import re
+    items = []
+    if not notes:
+        return items
+    for part in str(notes).split("|"):
+        part = part.strip()
+        m = re.match(r"^(\d+)\s+(\S+)\s+(.+)$", part)
+        if not m:
+            continue
+        qty = int(m.group(1))
+        unit = m.group(2)
+        rest = m.group(3).strip()
+        is_serial = bool(re.search(r"\[.*\]", rest))
+        name = re.sub(r"\s*\[.*\]$", "", rest).strip()
+        if name:
+            items.append({"name": name, "qty": qty, "unit": unit, "is_serial": is_serial})
+    return items
+
+
 def get_products_pending_return_grouped(warehouse_id=None):
-    """Devuelve productos agrupados con cantidad pendiente de devolución.
-    Considera tanto salidas por cantidad como unidades serializadas marcadas 'no disponible'."""
+    """Devuelve productos por cantidad con pendiente de devolucion.
+    Usa la tabla movement_items (product_id real + brand).
+    Excluye items serializados, gestionados en get_serials_pending_return()."""
     conn = get_connection()
     try:
         wh_filter = ""
         params = []
         if warehouse_id is not None:
-            wh_filter = "AND p.warehouse_id = ?"
+            wh_filter = "AND m.warehouse_id = ?"
             params.append(warehouse_id)
+
         rows = conn.execute(
             f"""
-            SELECT p.name, COALESCE(p.brand,'') AS brand,
-                   MAX(p.unit) AS unit,
-                   CASE
-                       WHEN MAX(p.unit) = 'und' AND MAX(CASE WHEN COALESCE(p.serial,'') != '' THEN 1 ELSE 0 END) = 1
-                       THEN SUM(CASE WHEN p.status='no disponible' THEN 1 ELSE 0 END)
-                   ELSE COALESCE((
-                       SELECT SUM(COALESCE(s.qty, 0) - COALESCE(d.qty, 0))
-                       FROM (
-                           SELECT product_id, SUM(quantity) AS qty FROM movements
-                           WHERE type = 'salida' GROUP BY product_id
-                       ) s
-                       LEFT JOIN (
-                           SELECT product_id, SUM(quantity) AS qty FROM movements
-                           WHERE type = 'devolucion' GROUP BY product_id
-                       ) d ON s.product_id = d.product_id
-                       JOIN products p2 ON s.product_id = p2.id
-                       WHERE p2.name = p.name AND COALESCE(p2.brand,'') = COALESCE(p.brand,'')
-                   ), 0)
-                   END AS pending
-            FROM products p
-            WHERE p.status != 'inactivo'
+            SELECT mi.name, mi.brand, mi.unit, mi.seriales,
+                   m.type, mi.qty
+            FROM movement_items mi
+            JOIN movements m ON mi.movement_id = m.id
+            WHERE m.type IN ('salida', 'asignacion', 'devolucion')
               {wh_filter}
-            GROUP BY p.name, COALESCE(p.brand,'')
-            HAVING pending > 0
-            ORDER BY p.name
+            ORDER BY mi.name
             """,
             params,
         ).fetchall()
-        return rows
+
+        # net[(name, brand)] -> {unit, salida, devolucion}
+        net = {}
+        for r in rows:
+            if r["seriales"]:
+                continue  # serializados van en get_serials_pending_return
+            key = (r["name"], r["brand"])
+            d = net.setdefault(key, {"unit": r["unit"], "salida": 0, "devolucion": 0})
+            d["unit"] = r["unit"]
+            if r["type"] in ("salida", "asignacion"):
+                d["salida"] += r["qty"]
+            else:
+                d["devolucion"] += r["qty"]
+
+        result = []
+        for (name, brand), d in net.items():
+            pending = d["salida"] - d["devolucion"]
+            if pending > 0:
+                result.append({"name": name, "brand": brand, "unit": d["unit"], "pending": pending})
+        result.sort(key=lambda r: r["name"])
+        return result
     finally:
         conn.close()
+
+
+def migrate_movement_items():
+    """Backfill de movement_items para movimientos existentes.
+    Idempotente: solo procesa movimientos sin items."""
+    conn = get_connection()
+    try:
+        movs = conn.execute(
+            """SELECT m.id, m.type, m.product_id, m.quantity, m.notes
+               FROM movements m
+               WHERE m.type IN ('salida','asignacion','devolucion','entrada')"""
+        ).fetchall()
+        migrated = 0
+        for m in movs:
+            if m["product_id"] != 0:
+                exists = conn.execute(
+                    "SELECT COUNT(*) FROM movement_items WHERE movement_id=?", (m["id"],)
+                ).fetchone()[0]
+                if exists:
+                    continue
+                p = conn.execute(
+                    "SELECT name, COALESCE(brand,'') AS brand, unit FROM products WHERE id=?",
+                    (m["product_id"],),
+                ).fetchone()
+                if p:
+                    conn.execute(
+                        """INSERT INTO movement_items
+                           (movement_id, product_id, name, brand, qty, unit, seriales)
+                           VALUES (?, ?, ?, ?, ?, ?, '')""",
+                        (m["id"], m["product_id"], p["name"], p["brand"], m["quantity"] or 1, p["unit"]),
+                    )
+                    migrated += 1
+            else:
+                exists = conn.execute(
+                    "SELECT COUNT(*) FROM movement_items WHERE movement_id=?", (m["id"],)
+                ).fetchone()[0]
+                if exists:
+                    continue
+                items = _parse_compound_notes(m["notes"])
+                for it in items:
+                    # Buscar brand real del producto por nombre
+                    p = conn.execute(
+                        "SELECT id, COALESCE(brand,'') AS brand FROM products WHERE name=? LIMIT 1",
+                        (it["name"],),
+                    ).fetchone()
+                    brand = p["brand"] if p else ""
+                    product_id = p["id"] if p else None
+                    seriales = _extract_serials(it["name"], m["notes"]) if it["is_serial"] else ""
+                    conn.execute(
+                        """INSERT INTO movement_items
+                           (movement_id, product_id, name, brand, qty, unit, seriales)
+                           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                        (m["id"], product_id, it["name"], brand, it["qty"], it["unit"], seriales),
+                    )
+                migrated += len(items) if items else 0
+
+        # Backfill de brand vacio en items de movimientos compuestos viejos
+        updated = 0
+        rows = conn.execute(
+            "SELECT id, name FROM movement_items WHERE brand=''"
+        ).fetchall()
+        for r in rows:
+            p = conn.execute(
+                "SELECT COALESCE(brand,'') AS brand FROM products WHERE name=? LIMIT 1",
+                (r["name"],),
+            ).fetchone()
+            if p and p["brand"]:
+                conn.execute(
+                    "UPDATE movement_items SET brand=? WHERE id=?",
+                    (p["brand"], r["id"]),
+                )
+                updated += 1
+
+        conn.commit()
+        return migrated + updated
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def _extract_serials(name, notes):
+    """Extrae seriales de un item en las notas compuestas para nombre dado."""
+    for part in str(notes).split("|"):
+        if name in part and "[" in part:
+            start = part.find("[")
+            end = part.find("]", start)
+            if end > start:
+                return part[start + 1:end]
+    return ""
 
 
 def create_grouped_movement(type_, name, brand, quantity, employee_id, user_id, notes,
@@ -1180,6 +1387,7 @@ def get_serials_pending_return(search="", warehouse_id=None):
             FROM products p
             WHERE p.status = 'no disponible'
               AND COALESCE(p.serial,'') != ''
+              AND p.unit = 'und'
               {wh_filter}
               {search_filter}
             ORDER BY p.name, p.serial
@@ -1296,10 +1504,16 @@ def apply_salida_quantity(name, brand, quantity, warehouse_id=None):
     Retorna dict con name, qty, unit."""
     conn = get_connection()
     try:
-        target = conn.execute(
-            "SELECT id, quantity FROM products WHERE name=? AND COALESCE(brand,'')=? AND status='disponible' AND quantity > 0 LIMIT 1",
-            (name, brand or ""),
-        ).fetchone()
+        if brand:
+            target = conn.execute(
+                "SELECT id, quantity FROM products WHERE name=? AND COALESCE(brand,'')=? AND status='disponible' AND quantity > 0 LIMIT 1",
+                (name, brand or ""),
+            ).fetchone()
+        else:
+            target = conn.execute(
+                "SELECT id, quantity FROM products WHERE name=? AND status='disponible' AND quantity > 0 LIMIT 1",
+                (name,),
+            ).fetchone()
         if not target:
             raise ValueError(f"Stock insuficiente de '{name}'.")
         if target["quantity"] < quantity:
@@ -1311,7 +1525,9 @@ def apply_salida_quantity(name, brand, quantity, warehouse_id=None):
         conn.commit()
         _invalidate_prefix("units_by_model")
         _invalidate_prefix("products_grouped")
-        return {"name": name, "qty": quantity, "unit": conn.execute("SELECT unit FROM products WHERE id=?", (target["id"],)).fetchone()["unit"]}
+        p = conn.execute("SELECT unit, brand FROM products WHERE id=?", (target["id"],)).fetchone()
+        return {"name": name, "qty": quantity, "unit": p["unit"],
+                "product_id": target["id"], "brand": brand or p["brand"]}
     except Exception:
         conn.rollback()
         raise
@@ -1324,15 +1540,25 @@ def apply_salida_serial(name, brand, quantity, warehouse_id=None):
     Retorna dict con name, qty, unit, seriales."""
     conn = get_connection()
     try:
-        units = conn.execute(
-            "SELECT id, serial FROM products WHERE name=? AND COALESCE(brand,'')=? AND status='disponible' LIMIT ?",
-            (name, brand or "", quantity),
-        ).fetchall()
-        if len(units) < quantity:
+        if brand:
+            units = conn.execute(
+                "SELECT id, serial FROM products WHERE name=? AND COALESCE(brand,'')=? AND status='disponible' LIMIT ?",
+                (name, brand or "", quantity),
+            ).fetchall()
             avail = conn.execute(
                 "SELECT COUNT(*) FROM products WHERE name=? AND COALESCE(brand,'')=? AND status='disponible'",
                 (name, brand or ""),
             ).fetchone()[0]
+        else:
+            units = conn.execute(
+                "SELECT id, serial FROM products WHERE name=? AND status='disponible' LIMIT ?",
+                (name, quantity),
+            ).fetchall()
+            avail = conn.execute(
+                "SELECT COUNT(*) FROM products WHERE name=? AND status='disponible'",
+                (name,),
+            ).fetchone()[0]
+        if len(units) < quantity:
             raise ValueError(f"Stock insuficiente de '{name}': disponible {avail}, solicitado {quantity}")
         ids = [u["id"] for u in units]
         conn.execute(
@@ -1343,7 +1569,9 @@ def apply_salida_serial(name, brand, quantity, warehouse_id=None):
         _invalidate_prefix("units_by_model")
         _invalidate_prefix("products_grouped")
         serials = [u["serial"] for u in units if u["serial"]]
-        return {"name": name, "qty": quantity, "unit": "und", "serials": serials}
+        p = conn.execute("SELECT brand FROM products WHERE id=?", (units[0]["id"],)).fetchone()
+        return {"name": name, "qty": quantity, "unit": "und", "serials": serials,
+                "product_id": units[0]["id"], "brand": brand or (p["brand"] if p else "")}
     except Exception:
         conn.rollback()
         raise
@@ -1355,10 +1583,16 @@ def apply_devolucion_quantity(name, brand, quantity, warehouse_id=None):
     """Aumenta stock de un grupo por cantidad. NO crea movimiento."""
     conn = get_connection()
     try:
-        target = conn.execute(
-            "SELECT id FROM products WHERE name=? AND COALESCE(brand,'')=? AND status='disponible' LIMIT 1",
-            (name, brand or ""),
-        ).fetchone()
+        if brand:
+            target = conn.execute(
+                "SELECT id FROM products WHERE name=? AND COALESCE(brand,'')=? AND status='disponible' LIMIT 1",
+                (name, brand or ""),
+            ).fetchone()
+        else:
+            target = conn.execute(
+                "SELECT id FROM products WHERE name=? AND status='disponible' LIMIT 1",
+                (name,),
+            ).fetchone()
         if not target:
             raise ValueError(f"No hay productos del grupo '{name}' disponibles para devolucion.")
         conn.execute(
@@ -1368,6 +1602,9 @@ def apply_devolucion_quantity(name, brand, quantity, warehouse_id=None):
         conn.commit()
         _invalidate_prefix("units_by_model")
         _invalidate_prefix("products_grouped")
+        p = conn.execute("SELECT unit, brand FROM products WHERE id=?", (target["id"],)).fetchone()
+        return {"name": name, "qty": quantity, "unit": p["unit"],
+                "product_id": target["id"], "brand": brand or p["brand"]}
     except Exception:
         conn.rollback()
         raise
@@ -1401,7 +1638,9 @@ def apply_devolucion_serial(serial_ids, warehouse_id=None):
         _invalidate_prefix("products_grouped")
         name = rows[0]["name"]
         serials = [r["serial"] for r in rows if r["serial"]]
-        return {"name": name, "qty": len(serial_ids), "unit": "und", "serials": serials}
+        p = conn.execute("SELECT brand FROM products WHERE id=?", (rows[0]["id"],)).fetchone()
+        return {"name": name, "qty": len(serial_ids), "unit": "und", "serials": serials,
+                "product_id": rows[0]["id"], "brand": p["brand"] if p else ""}
     except Exception:
         conn.rollback()
         raise
@@ -1411,7 +1650,7 @@ def apply_devolucion_serial(serial_ids, warehouse_id=None):
 
 def create_compound_movement(type_, user_id, items, notes="", warehouse_id=None, employee_id=None):
     """Crea 1 solo movimiento con el resumen de toda la operacion.
-    items: lista de dicts con name, qty, unit [, seriales]"""
+    items: lista de dicts con name, qty, unit [, seriales, product_id, brand]"""
     conn = get_connection()
     try:
         total_qty = sum(item["qty"] for item in items)
@@ -1430,12 +1669,32 @@ def create_compound_movement(type_, user_id, items, notes="", warehouse_id=None,
         summary = " | ".join(parts)
         combined = (notes + " | " + summary) if notes else summary
 
-        conn.execute(
+        cursor = conn.cursor()
+        cursor.execute(
             """INSERT INTO movements
                (type, product_id, employee_id, user_id, quantity, notes, warehouse_id)
                VALUES (?, 0, ?, ?, ?, ?, ?)""",
             (type_, employee_id, user_id, total_qty, combined, warehouse_id),
         )
+        movement_id = cursor.lastrowid
+
+        for item in items:
+            seriales_str = ", ".join(item.get("serials", [])) if item.get("serials") else ""
+            cursor.execute(
+                """INSERT INTO movement_items
+                   (movement_id, product_id, name, brand, qty, unit, seriales)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    movement_id,
+                    item.get("product_id"),
+                    item["name"],
+                    item.get("brand", ""),
+                    item["qty"],
+                    item.get("unit", "und"),
+                    seriales_str,
+                ),
+            )
+
         conn.commit()
         _invalidate_prefix("units_by_model")
         _invalidate_prefix("products_grouped")
@@ -1512,21 +1771,24 @@ def get_dashboard_stats(warehouse_id=None):
 
         params_ml = list(params_m)
         params_ml.append(50)
-        movements = conn.execute(
-            f"""
-            SELECT m.id, m.type, m.timestamp, m.quantity,
-                   COALESCE(p.name || ' (' || COALESCE(p.barcode, p.serial, '') || ')', m.notes) AS product,
-                   COALESCE(e.name, '-') AS employee,
-                   u.username AS registered_by, m.notes
-            FROM movements m
-            LEFT JOIN products p ON m.product_id = p.id
-            LEFT JOIN employees e ON m.employee_id = e.id
-            JOIN users u ON m.user_id = u.id
-            WHERE 1=1 {wh_filter_m}
-            ORDER BY m.id DESC LIMIT ?
-            """,
-            params_ml,
-        ).fetchall()
+        movements = [
+            _clean_row_product(r)
+            for r in conn.execute(
+                f"""
+                SELECT m.id, m.type, m.timestamp, m.quantity,
+                       COALESCE(p.name, m.notes) AS product,
+                       COALESCE(e.name, '-') AS employee,
+                       u.username AS registered_by, m.notes
+                FROM movements m
+                LEFT JOIN products p ON m.product_id = p.id
+                LEFT JOIN employees e ON m.employee_id = e.id
+                JOIN users u ON m.user_id = u.id
+                WHERE 1=1 {wh_filter_m}
+                ORDER BY m.id DESC LIMIT ?
+                """,
+                params_ml,
+            ).fetchall()
+        ]
 
         return {
             "product_counts": dict(product_row),

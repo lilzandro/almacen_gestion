@@ -118,16 +118,42 @@ def clear_tree(tree: ttk.Treeview):
 
 
 def center_dialog(dialog):
-    """Centra un diálogo Toplevel sobre su ventana padre."""
+    """Centra un diálogo Toplevel sobre su ventana padre (coords de pantalla)."""
     dialog.update_idletasks()
-    parent_x = dialog.master.winfo_x()
-    parent_y = dialog.master.winfo_y()
-    parent_w = dialog.master.winfo_width()
-    parent_h = dialog.master.winfo_height()
+    master = dialog.master
+    parent_x = master.winfo_rootx()
+    parent_y = master.winfo_rooty()
+    parent_w = master.winfo_width()
+    parent_h = master.winfo_height()
     dialog_w = dialog.winfo_width()
     dialog_h = dialog.winfo_height()
-    x = parent_x + (parent_w - dialog_w) // 2
-    y = parent_y + (parent_h - dialog_h) // 2
+    if dialog_w <= 1 or dialog_h <= 1:
+        # Ventana aún no mapeada (withdrawn): recuperar tamaño real de la geometría
+        try:
+            geom = dialog.winfo_geometry()
+            if geom and "x" in geom:
+                size = geom.split("+", 1)[0]
+                w, h = size.split("x")
+                dialog_w = int(w)
+                dialog_h = int(h)
+        except Exception:
+            pass
+    if dialog_w <= 1:
+        dialog_w = dialog.winfo_reqwidth()
+    if dialog_h <= 1:
+        dialog_h = dialog.winfo_reqheight()
+    x = parent_x + max((parent_w - dialog_w) // 2, 0)
+    y = parent_y + max((parent_h - dialog_h) // 2, 0)
+    screen_w = dialog.winfo_screenwidth()
+    screen_h = dialog.winfo_screenheight()
+    if x < 0:
+        x = 0
+    if y < 0:
+        y = 0
+    if x + dialog_w > screen_w:
+        x = max(screen_w - dialog_w, 0)
+    if y + dialog_h > screen_h:
+        y = max(screen_h - dialog_h, 0)
     dialog.geometry(f"+{x}+{y}")
 
 

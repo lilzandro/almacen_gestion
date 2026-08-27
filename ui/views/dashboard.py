@@ -1,4 +1,6 @@
 import customtkinter as ctk
+import queue
+import threading
 from ui.colors import *
 
 try:
@@ -10,7 +12,7 @@ from ui.dashboard_widgets import (
     make_dashboard_movements_list,
     setup_dashboard_movements_style,
 )
-from database.repository import get_dashboard_stats
+from database.repository import get_dashboard_stats, get_movement_detail
 
 
 class DashboardView(ctk.CTkFrame):
@@ -19,10 +21,9 @@ class DashboardView(ctk.CTkFrame):
         self.current_user = current_user
         self.app = app
         self._on_navigate = on_navigate
-        self.last_refresh_time = 0  # Timestamp of last refresh
-        self.min_refresh_interval = (
-            2000  # Minimum interval between refreshes in milliseconds
-        )
+        self._load_gen = 0
+        self._load_pending = False
+        self._load_queue = queue.Queue()
         self.loading_label = (
             None  # Indicador de carga (se inicializa cuando se necesita)
         )
@@ -38,6 +39,7 @@ class DashboardView(ctk.CTkFrame):
 
     def _make_card_clickable(self, card, action, accent_color):
         """Aplica hover + cursor + click a card y todos sus hijos."""
+
         def _bind(w):
             try:
                 w.configure(cursor="hand2")
@@ -110,28 +112,71 @@ class DashboardView(ctk.CTkFrame):
 
         # (key, title, icon_color, hover_border, icon, action)
         all_stat_defs = [
-            ("disponible",      "Productos Disponibles", HOVER_EXPORT, HOVER_EXPORT, "✅",
-             lambda: self._go("products", lambda v: v.set_status_filter("disponible"))),
-            ("entrada_count",   "Entradas",              AZUL_CERULEO, NARANJA_SELECCION, "📥",
-             lambda: self._go("movements", lambda v: v.set_type_filter("entrada"))),
-            ("salida_count",    "Salidas",               NARANJA_SELECCION, NARANJA_SELECCION, "📤",
-             lambda: self._go("movements", lambda v: v.set_type_filter("salida"))),
-            ("devolucion_count","Devoluciones",           HOVER_EXPORT, NARANJA_SELECCION, "↩️",
-             lambda: self._go("movements", lambda v: v.set_type_filter("devolucion"))),
-            ("asignacion_count","Asignaciones",           AZUL_CIELO, HOVER_MOV_ASIG, "📋",
-             lambda: self._go("movements", lambda v: v.set_type_filter("asignacion"))),
+            (
+                "disponible",
+                "Productos Disponibles",
+                HOVER_EXPORT,
+                HOVER_EXPORT,
+                "✅",
+                lambda: self._go(
+                    "products", lambda v: v.set_status_filter("disponible")
+                ),
+            ),
+            (
+                "entrada_count",
+                "Entradas",
+                AZUL_CERULEO,
+                NARANJA_SELECCION,
+                "📥",
+                lambda: self._go("movements", lambda v: v.set_type_filter("entrada")),
+            ),
+            (
+                "salida_count",
+                "Salidas",
+                NARANJA_SELECCION,
+                NARANJA_SELECCION,
+                "📤",
+                lambda: self._go("movements", lambda v: v.set_type_filter("salida")),
+            ),
+            (
+                "devolucion_count",
+                "Devoluciones",
+                HOVER_EXPORT,
+                NARANJA_SELECCION,
+                "↩️",
+                lambda: self._go(
+                    "movements", lambda v: v.set_type_filter("devolucion")
+                ),
+            ),
+            (
+                "asignacion_count",
+                "Asignaciones",
+                AZUL_CIELO,
+                HOVER_MOV_ASIG,
+                "📋",
+                lambda: self._go(
+                    "movements", lambda v: v.set_type_filter("asignacion")
+                ),
+            ),
         ]
 
-        for i, (key, title, icon_color, hover_border, icon, action) in enumerate(all_stat_defs):
+        for i, (key, title, icon_color, hover_border, icon, action) in enumerate(
+            all_stat_defs
+        ):
             card = ctk.CTkFrame(
-                cards_frame, corner_radius=14, fg_color="white",
-                border_width=2, border_color="white",
+                cards_frame,
+                corner_radius=14,
+                fg_color="white",
+                border_width=2,
+                border_color="white",
             )
             card.grid(row=0, column=i, padx=10, pady=8, sticky="ew")
 
             hint = ctk.CTkLabel(
-                card, text="Ver →",
-                font=ctk.CTkFont(size=11), text_color=TEXTO_DASH_HINT,
+                card,
+                text="Ver →",
+                font=ctk.CTkFont(size=11),
+                text_color=TEXTO_DASH_HINT,
             )
             hint.pack(anchor="e", padx=10, pady=(6, 0))
 
@@ -139,8 +184,10 @@ class DashboardView(ctk.CTkFrame):
                 card, text=icon, font=ctk.CTkFont(size=32), text_color=icon_color
             ).pack(pady=(0, 0))
             lbl = ctk.CTkLabel(
-                card, text="0",
-                font=ctk.CTkFont(size=40, weight="bold"), text_color=AZUL_NOCHE,
+                card,
+                text="0",
+                font=ctk.CTkFont(size=40, weight="bold"),
+                text_color=AZUL_NOCHE,
             )
             lbl.pack()
             self._stat_vars[key] = lbl
@@ -217,119 +264,258 @@ class DashboardView(ctk.CTkFrame):
         self.loading_indicator.grid_remove()
 
     def refresh(self):
-        import time
-        current_ms = time.time() * 1000
-        if current_ms - self.last_refresh_time < self.min_refresh_interval:
+        if self._load_pending:
             return
-        self.last_refresh_time = current_ms
+        self._load_pending = True
+        self._load_gen += 1
 
         # Placeholder inmediato — no bloquear la UI
         for lbl in self._stat_vars.values():
             lbl.configure(text="—")
         self.movements_subheader.configure(text="Cargando...")
-
-        # Cancelar carga previa pendiente, si existe
-        if hasattr(self, "_load_after_id") and self._load_after_id:
-            self.after_cancel(self._load_after_id)
-        self._load_after_id = self.after(10, self._load_data)
+        self.loading_indicator.grid()
+        self.after(10, self._start_load)
 
     def _show_movement_detail(self, mov):
         """Ventana con detalle completo de un movimiento."""
-        from ui.widgets import center_dialog
+        detail = None
+        try:
+            detail = get_movement_detail(mov.get("id"))
+        except Exception:
+            detail = None
+        if detail is None:
+            detail = dict(mov)
+
         type_colors = {
             "entrada": (AZUL_CERULEO, "📥"),
             "salida": (NARANJA_SELECCION, "📤"),
             "devolucion": (AMARILLO_AMBAR, "↩️"),
             "asignacion": (AZUL_CIELO, "📋"),
         }
-        tc = type_colors.get(mov.get("type", ""), (AZUL_MARINO, "📋"))
+        tc = type_colors.get(detail.get("type", ""), (AZUL_MARINO, "📋"))
         d = ctk.CTkToplevel(self)
         d.title("Detalle del Movimiento")
-        d.geometry("520x380")
-        d.resizable(False, False)
+        d.geometry("720x780")
+        d.minsize(560, 560)
         d.configure(fg_color=BLANCO_CALIDO)
         d.transient(self)
+        d.withdraw()  # oculto hasta centrar -> evita salto de posición
 
-        hdr = ctk.CTkFrame(d, fg_color=AZUL_NOCHE, height=56)
+        hdr = ctk.CTkFrame(d, fg_color=AZUL_NOCHE, height=64)
         hdr.pack(fill="x")
         hdr.pack_propagate(False)
         ctk.CTkLabel(
             hdr,
-            text=f"{tc[1]}  {mov.get('type', '').upper()}  #{mov.get('id', '')}",
-            font=ctk.CTkFont(size=20, weight="bold"),
+            text=f"{tc[1]}  {detail.get('type', '').upper()}  #{detail.get('id', '')}",
+            font=ctk.CTkFont(size=23, weight="bold"),
             text_color="white",
-        ).pack(side="left", padx=20, pady=14)
+        ).pack(side="left", padx=22, pady=16)
 
-        body = ctk.CTkFrame(d, fg_color="white", corner_radius=8)
-        body.pack(fill="both", expand=True, padx=16, pady=12)
+        body = ctk.CTkScrollableFrame(
+            d, fg_color="white", corner_radius=8, label_text=""
+        )
+        body.pack(fill="both", expand=True, padx=20, pady=14)
 
-        info = [
-            ("Producto", mov.get("product", "—")),
-            ("Cantidad", str(mov.get("quantity", 0))),
-            ("Empleado", mov.get("employee", "—")),
-            ("Registrado por", mov.get("registered_by", "—")),
-            ("Fecha/Hora", mov.get("timestamp", "—")),
-            ("Notas", mov.get("notes", "—") or "—"),
-        ]
-        for label, val in info:
-            row = ctk.CTkFrame(body, fg_color="transparent")
-            row.pack(fill="x", padx=14, pady=4)
+        def _on_wheel(event):
+            body._parent_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        def _bind_wheel(widget):
+            try:
+                widget.bind("<MouseWheel>", _on_wheel, add="+")
+                widget.bind(
+                    "<Button-4>",
+                    lambda e: body._parent_canvas.yview_scroll(-1, "units"),
+                    add="+",
+                )
+                widget.bind(
+                    "<Button-5>",
+                    lambda e: body._parent_canvas.yview_scroll(1, "units"),
+                    add="+",
+                )
+            except Exception:
+                pass
+            for child in widget.winfo_children():
+                _bind_wheel(child)
+
+        def _section(title):
             ctk.CTkLabel(
-                row, text=label + ":",
-                font=ctk.CTkFont(size=13, weight="bold"),
-                text_color=AZUL_MARINO, width=120, anchor="w",
+                body,
+                text=title,
+                font=ctk.CTkFont(size=17, weight="bold"),
+                text_color=AZUL_MARINO,
+            ).pack(anchor="w", padx=16, pady=(14, 6))
+
+        def _meta_row(label, value):
+            row = ctk.CTkFrame(body, fg_color="transparent")
+            row.pack(fill="x", padx=16, pady=5)
+            ctk.CTkLabel(
+                row,
+                text=label + ":",
+                font=ctk.CTkFont(size=15, weight="bold"),
+                text_color=AZUL_MARINO,
+                width=160,
+                anchor="w",
             ).pack(side="left")
             ctk.CTkLabel(
-                row, text=val,
-                font=ctk.CTkFont(size=13),
-                text_color=GRIS_AZULADO, anchor="w",
-            ).pack(side="left", padx=(8, 0))
+                row,
+                text=value or "—",
+                font=ctk.CTkFont(size=15),
+                text_color=GRIS_AZULADO,
+                anchor="w",
+                justify="left",
+            ).pack(side="left", padx=(10, 0))
+
+        # Productos — desglose preciso por item
+        _section("📦 Productos")
+        items = detail.get("items") or []
+        if items:
+            for it in items:
+                line = f"{it['qty']} {it['unit']} {it['name']}"
+                if it.get("brand"):
+                    line += f"  ·  {it['brand']}"
+                item_row = ctk.CTkFrame(
+                    body,
+                    fg_color="white",
+                    corner_radius=6,
+                    border_width=1,
+                    border_color=DASHBOARD_CARD_BORDER_SEC,
+                )
+                item_row.pack(fill="x", padx=16, pady=4)
+                ctk.CTkLabel(
+                    item_row,
+                    text="🔹",
+                    font=ctk.CTkFont(size=15),
+                ).pack(side="left", padx=(12, 8), pady=8)
+                ctk.CTkLabel(
+                    item_row,
+                    text=line,
+                    font=ctk.CTkFont(size=16, weight="bold"),
+                    text_color=AZUL_NOCHE,
+                    anchor="w",
+                ).pack(side="left", padx=(0, 6), pady=8)
+        else:
+            product = detail.get("product") or detail.get("notes") or "—"
+            _meta_row("Producto", product)
+            if detail.get("brand"):
+                _meta_row("Marca", detail["brand"])
+
+        _section("Información :")
+        emp = detail.get("employee")
+        if emp in ("-", "", None):
+            emp = None
+        _meta_row("Empleado", emp)
+        if detail.get("cargo"):
+            _meta_row("Cargo", detail["cargo"])
+        _meta_row("Registrado por", detail.get("registered_by"))
+        if detail.get("warehouse"):
+            _meta_row("Almacén", detail["warehouse"])
+        _meta_row("Fecha/Hora", detail.get("timestamp"))
+        if detail.get("notes"):
+            _meta_row("Notas", detail["notes"])
+
+        _bind_wheel(body)
 
         ctk.CTkButton(
-            d, text="✕ Cerrar", height=36,
-            font=ctk.CTkFont(size=13, weight="bold"),
-            fg_color=NARANJA_INTENSO, hover_color=HOVER_NARANJA_INT,
+            d,
+            text="✕ Cerrar",
+            height=42,
+            font=ctk.CTkFont(size=15, weight="bold"),
+            fg_color=NARANJA_INTENSO,
+            hover_color=HOVER_NARANJA_INT,
             text_color="white",
             command=d.destroy,
-        ).pack(padx=16, pady=(0, 12))
+        ).pack(padx=20, pady=(0, 16))
 
-        center_dialog(d)
+        # Centrar sobre la ventana principal usando tamaño conocido
+        dw, dh = 720, 780
+        root = self.winfo_toplevel()
+        root.update_idletasks()
+        rx, ry = root.winfo_rootx(), root.winfo_rooty()
+        rw, rh = root.winfo_width(), root.winfo_height()
+        x = rx + max((rw - dw) // 2, 0)
+        y = ry + max((rh - dh) // 2, 0)
+        sw, sh = d.winfo_screenwidth(), d.winfo_screenheight()
+        if x < 0:
+            x = 0
+        if y < 0:
+            y = 0
+        if x + dw > sw:
+            x = max(sw - dw, 0)
+        if y + dh > sh:
+            y = max(sh - dh, 0)
+        d.geometry(f"{dw}x{dh}+{x}+{y}")
+        d.deiconify()
         d.after(50, d.grab_set)
 
-    def _load_data(self):
-        """Fetch real data async (deferred via after). Runs off the critical path."""
-        self.loading_indicator.grid()
+    def _start_load(self):
+        """Corre get_dashboard_stats en un thread; el resultado se entrega
+        via cola para no bloquear la UI. Nunca toca widgets desde el thread."""
+        if not self._load_pending or not self.winfo_exists():
+            return
         self.update_idletasks()
+        gen = self._load_gen
+        wh_id = self.app.current_warehouse_id if self.app else None
+        q = self._load_queue
+
+        def worker():
+            try:
+                stats = get_dashboard_stats(warehouse_id=wh_id)
+            except Exception as exc:
+                stats, exc = None, exc
+            else:
+                exc = None
+            q.put((gen, stats, exc))
+
+        threading.Thread(target=worker, daemon=True).start()
+        self.after(100, self._poll_load)
+
+    def _poll_load(self):
+        if not self._load_pending or not self.winfo_exists():
+            return
         try:
-            wh_id = self.app.current_warehouse_id if self.app else None
-            stats = get_dashboard_stats(warehouse_id=wh_id)
-            product_counts = stats["product_counts"]
-            movement_counts = stats["movement_counts"]
-            movements = stats["recent_movements"]
+            gen, stats, exc = self._load_queue.get_nowait()
+        except queue.Empty:
+            self.after(100, self._poll_load)
+            return
+        self._apply_stats(gen, stats, exc)
 
-            movement_key_map = {
-                "entrada_count": "entrada",
-                "salida_count": "salida",
-                "devolucion_count": "devolucion",
-                "asignacion_count": "asignacion",
-            }
-            counts = {**product_counts, **movement_counts}
-            self._recent_movements = [dict(m) for m in movements]
-            for key, lbl in self._stat_vars.items():
-                lookup_key = movement_key_map.get(key, key)
-                val = int(counts.get(lookup_key) or 0)
-                lbl.configure(text=str(val))
+    def _apply_stats(self, gen, stats, exc):
+        if not self.winfo_exists() or gen != self._load_gen:
+            return
+        self._load_pending = False
+        self.loading_indicator.grid_remove()
 
-            for widget in self.movements_content.winfo_children():
-                widget.destroy()
-
-            make_dashboard_movements_list(
-                self.movements_content, movements,
-                on_click=self._show_movement_detail,
-            )
+        if exc is not None:
             self.movements_subheader.configure(
-                text=f"Mostrando {len(movements)} movimientos recientes"
+                text="Error al cargar los datos. Intenta de nuevo."
             )
-        finally:
-            self.loading_indicator.grid_remove()
-            self._load_after_id = None
+            return
+
+        product_counts = stats["product_counts"]
+        movement_counts = stats["movement_counts"]
+        movements = stats["recent_movements"][:10]
+
+        movement_key_map = {
+            "entrada_count": "entrada",
+            "salida_count": "salida",
+            "devolucion_count": "devolucion",
+            "asignacion_count": "asignacion",
+        }
+        counts = {**product_counts, **movement_counts}
+        self._recent_movements = [dict(m) for m in movements]
+        for key, lbl in self._stat_vars.items():
+            lookup_key = movement_key_map.get(key, key)
+            val = int(counts.get(lookup_key) or 0)
+            lbl.configure(text=str(val))
+
+        for widget in self.movements_content.winfo_children():
+            widget.destroy()
+
+        make_dashboard_movements_list(
+            self.movements_content,
+            movements,
+            on_click=self._show_movement_detail,
+        )
+        self.movements_subheader.configure(
+            text=f"Mostrando {len(movements)} movimientos recientes"
+        )
