@@ -206,11 +206,12 @@ class InventoryToggle(ctk.CTkFrame):
 
 
 class SerialTable(ctk.CTkFrame):
-    def __init__(self, master, fonts, on_count_change=None, show_mac=True):
+    def __init__(self, master, fonts, on_count_change=None, show_mac=True, show_barcode=True):
         super().__init__(master, fg_color="transparent")
         self.fonts = fonts
         self.on_count_change = on_count_change
         self.show_mac = show_mac
+        self.show_barcode = show_barcode
         self.rows = []
 
         # Columnas dinámicas
@@ -219,12 +220,17 @@ class SerialTable(ctk.CTkFrame):
         if show_mac:
             self._col_headers.append("MAC  (AA-BB-CC-DD-EE-FF)")
             self._col_widths.append((None,))
+        if show_barcode:
+            self._col_headers.append("Código")
+            self._col_widths.append((None,))
         self._col_headers.append("")
         self._col_widths.append((44,))
 
         self._col_keys = ["chk", "num", "serial"]
         if show_mac:
             self._col_keys.append("mac")
+        if show_barcode:
+            self._col_keys.append("barcode")
         self._col_keys.append("xbtn")
 
         # Barra "Generar filas"
@@ -324,6 +330,15 @@ class SerialTable(ctk.CTkFrame):
             row["mac"] = mac
             row["mac_var"] = mac_var
 
+        if self.show_barcode:
+            barcode = ctk.CTkEntry(self.holder, height=32, font=self.fonts["input_mono"],
+                                   placeholder_text="Código…", fg_color=WHITE, border_color=LINE,
+                                   border_width=1, corner_radius=RADIUS_FIELD, text_color=INK,
+                                   placeholder_text_color=INK_3)
+            _focus_ring(barcode)
+            barcode.grid(row=rr, column=self._col_index("barcode"), padx=6, pady=5, sticky="ew")
+            row["barcode"] = barcode
+
         _focus_ring(serial)
         xbtn = ctk.CTkButton(self.holder, text="✕", width=28, height=28,
                              corner_radius=6, fg_color=WHITE, text_color=ORANGE_D,
@@ -339,7 +354,12 @@ class SerialTable(ctk.CTkFrame):
     def _toggle_sin(self, row):
         sin = row["chk_var"].get() == "on"
         state = "disabled" if sin else "normal"
-        for key in ("serial", "mac") if self.show_mac else ("serial",):
+        keys = ["serial"]
+        if self.show_mac:
+            keys.append("mac")
+        if self.show_barcode:
+            keys.append("barcode")
+        for key in keys:
             e = row[key]
             e.delete(0, "end")
             e.configure(state=state)

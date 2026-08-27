@@ -454,6 +454,24 @@ def get_product_by_barcode(barcode):
         conn.close()
 
 
+def get_product_by_id(product_id):
+    """Obtiene un producto individual por su ID (con nombre de proveedor)."""
+    conn = get_connection()
+    try:
+        return conn.execute(
+            """SELECT p.id, p.name, p.barcode, p.brand, p.serial, p.mac,
+                      p.quantity, COALESCE(p.unit,'und') AS unit, p.status,
+                      p.supplier_id, COALESCE(sup.name,'N/A') AS supplier_name,
+                      p.warehouse_id, p.created_at, p.updated_at
+               FROM products p
+               LEFT JOIN suppliers sup ON p.supplier_id = sup.id
+               WHERE p.id=?""",
+            (product_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+
+
 def get_products_pending_return():
     """Obtiene productos dados salida que aún no han sido devueltos"""
     conn = get_connection()
@@ -586,26 +604,52 @@ def update_product(
         conn.close()
 
 
-def update_product_unit(product_id, serial, mac, barcode, status, user_id=None, warehouse_id=None):
-    """Actualiza los identificadores y estado de una unidad individual."""
+_UNIT_LABELS = {
+    "und": "unidades",
+    "m": "metros",
+    "caja": "cajas",
+    "cm": "cm",
+    "kg": "kg",
+    "g": "g",
+    "L": "L",
+    "ml": "ml",
+    "rollo": "rollos",
+    "par": "pares",
+}
+
+
+def update_product_unit(product_id, serial, mac, barcode, status, user_id=None, warehouse_id=None, quantity=None):
+    """Actualiza los identificadores, estado y cantidad de una unidad individual.
+    quantity solo se modifica si se proporciona (no None)."""
     conn = get_connection()
     try:
         old = conn.execute(
-            "SELECT serial, mac, barcode, status, name FROM products WHERE id=?",
+            "SELECT serial, mac, barcode, status, name, quantity, COALESCE(unit,'und') AS unit FROM products WHERE id=?",
             (product_id,),
         ).fetchone() if user_id else None
 
-        conn.execute(
-            """UPDATE products SET serial=?, mac=?, barcode=?, status=?,
-                                 updated_at=datetime('now','localtime')
-               WHERE id=?""",
-            (serial or None, mac or None, barcode or None, status, product_id),
-        )
+        if quantity is None:
+            conn.execute(
+                """UPDATE products SET serial=?, mac=?, barcode=?, status=?,
+                                     updated_at=datetime('now','localtime')
+                   WHERE id=?""",
+                (serial or None, mac or None, barcode or None, status, product_id),
+            )
+        else:
+            conn.execute(
+                """UPDATE products SET serial=?, mac=?, barcode=?, status=?, quantity=?,
+                                     updated_at=datetime('now','localtime')
+                   WHERE id=?""",
+                (serial or None, mac or None, barcode or None, status, quantity, product_id),
+            )
 
         if user_id and old:
             changes = []
             if old["status"] != status:
                 changes.append(f"estado: {old['status']}→{status}")
+            if quantity is not None and int(old["quantity"] or 0) != quantity:
+                lbl = _UNIT_LABELS.get(old["unit"], "cantidad")
+                changes.append(f"{lbl}: {int(old['quantity'] or 0)}→{quantity}")
             conn.execute(
                 """INSERT INTO movements
                    (type, product_id, employee_id, user_id, quantity, notes, warehouse_id)
@@ -697,7 +741,8 @@ def delete_product(product_id, user_id=None, notes="", warehouse_id=None):
     """Elimina o desactiva un producto.
     Sin movimientos → DELETE físico.
     Con movimientos → status='inactivo'.
-    Si se proporciona user_id, registra movimiento de eliminacion."""
+    Si se proporciona user_id, registra movimiento de eliminacion.
+    Retorna: 'eliminado' | 'desactivado'."""
     conn = None
     try:
         conn = get_connection()
@@ -726,12 +771,15 @@ def delete_product(product_id, user_id=None, notes="", warehouse_id=None):
                 "UPDATE products SET status='inactivo', updated_at=datetime('now','localtime') WHERE id=?",
                 (product_id,),
             )
+            outcome = "desactivado"
         else:
             conn.execute("DELETE FROM products WHERE id=?", (product_id,))
+            outcome = "eliminado"
 
         conn.commit()
         _invalidate_prefix("units_by_model")
         _invalidate_prefix("products_grouped")
+        return outcome
     except Exception as e:
         if conn:
             conn.rollback()
@@ -782,6 +830,29 @@ def delete_product_group(name, brand, user_id=None, notes="", warehouse_id=None)
     except Exception as e:
         conn.rollback()
         raise e
+    finally:
+        conn.close()
+
+
+def product_group_exists(name, brand, exclude_name=None, exclude_brand=None):
+    """True si ya existe un grupo (name+brand) con unidades activas.
+    Opcionalmente excluye un grupo (exclude_name, exclude_brand)."""
+    conn = get_connection()
+    try:
+        params = [name, brand]
+        excl = ""
+        if exclude_name is not None and exclude_brand is not None:
+            excl = "AND NOT (p.name = ? AND COALESCE(p.brand,'') = ?)"
+            params += [exclude_name, exclude_brand]
+        row = conn.execute(
+            f"""SELECT COUNT(*) AS n
+                FROM products p
+                WHERE p.name = ? AND COALESCE(p.brand,'') = ?
+                  AND p.status != 'inactivo'
+                  {excl}""",
+            params,
+        ).fetchone()
+        return row["n"] > 0
     finally:
         conn.close()
 
