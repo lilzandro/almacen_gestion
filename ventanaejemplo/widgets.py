@@ -381,6 +381,14 @@ class SerialTable(ctk.CTkFrame):
         for _ in range(n):
             self.add_row()
 
+    def add_row_with_code(self, code):
+        """Agrega una fila nueva y rellena su campo Código (si existe)."""
+        self.add_row()
+        if self.show_barcode and self.rows:
+            e = self.rows[-1]["barcode"]
+            e.delete(0, "end")
+            e.insert(0, code or "")
+
     def _renumber(self):
         for i, row in enumerate(self.rows):
             row["num"].configure(text=str(i + 1))

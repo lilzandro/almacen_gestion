@@ -63,7 +63,6 @@ from database.repository import (
     delete_product,
     delete_product_group,
     product_group_exists,
-    get_product_by_barcode,
     get_product_by_id,
     create_movement,
     bulk_create_products,
@@ -602,29 +601,12 @@ class ProductsView(ctk.CTkFrame):
         _BarcodeScanDialog(self, on_scan=self._handle_barcode_scan)
 
     def _handle_barcode_scan(self, barcode):
-        product = get_product_by_barcode(barcode)
-        if product:
-            if product["status"] == "inactivo":
-                MessageDialog(
-                    self,
-                    "Producto inactivo",
-                    f"El producto {product['name']} está inactivo.\n"
-                    "No se puede registrar de nuevo con este código de barras.",
-                    is_error=True,
-                )
-                return
-            MessageDialog(
-                self,
-                "Producto encontrado",
-                f"Producto: {product['name']}\nCantidad actual: {product['quantity']}\nCódigo: {barcode}",
-            )
-        else:
-            _RegistrarProductoDialog(
-                self,
-                on_save=self._do_bulk_add,
-                products_view=self,
-                prefill={"barcode": barcode},
-            )
+        _RegistrarProductoDialog(
+            self,
+            on_save=self._do_bulk_add,
+            products_view=self,
+            prefill={"barcode": barcode},
+        )
 
     def _selected_unit(self):
         if not self._selected_id:
@@ -1417,6 +1399,7 @@ class _BarcodeScanDialog(ctk.CTkToplevel):
         )
         self.barcode_entry.pack(pady=10, padx=20, fill="x")
         self.barcode_entry.focus()
+        self.barcode_entry.select_range(0, "end")
 
         ctk.CTkButton(
             self,
@@ -1448,8 +1431,92 @@ class _BarcodeScanDialog(ctk.CTkToplevel):
     def _on_accept(self):
         barcode = self.barcode_entry.get().strip()
         if barcode:
+            try:
+                self.bell()
+            except Exception:
+                pass
             self.destroy()
             self.on_scan(barcode)
+
+
+class _ScanRowDialog(ctk.CTkToplevel):
+    """Diálogo de escaneo continuo: cada código agregado añade una fila."""
+
+    def __init__(self, parent, on_code):
+        super().__init__(parent)
+        self.title("Escanear Código")
+        self.geometry("440x170")
+        self.resizable(False, False)
+        self.configure(fg_color=BLANCO_CALIDO)
+        self.transient(parent)
+        self.on_code = on_code
+
+        ctk.CTkLabel(
+            self,
+            text="Escanea o ingresa el código",
+            font=ctk.CTkFont(size=16, weight="bold"),
+            text_color=AZUL_NOCHE,
+        ).pack(pady=(16, 8))
+
+        self.entry = ctk.CTkEntry(
+            self,
+            height=40,
+            font=ctk.CTkFont(size=18),
+            placeholder_text="Código de barras...",
+            text_color=AZUL_NOCHE,
+        )
+        self.entry.pack(pady=(0, 8), padx=20, fill="x")
+        self.entry.focus()
+        self.entry.select_range(0, "end")
+        self.entry.bind("<Return>", lambda e: self._submit())
+
+        btns = ctk.CTkFrame(self, fg_color="transparent")
+        btns.pack(pady=(0, 12))
+        ctk.CTkButton(
+            btns,
+            text="Agregar fila",
+            width=130,
+            height=36,
+            fg_color=AZUL_CERULEO,
+            hover_color=HOVER_FILTRO_DISP,
+            text_color="white",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            command=self._submit,
+        ).pack(side="left", padx=6)
+        ctk.CTkButton(
+            btns,
+            text="Cerrar",
+            width=110,
+            height=36,
+            fg_color=NARANJA_INTENSO,
+            hover_color=HOVER_NARANJA_INT,
+            text_color="white",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            command=self._close,
+        ).pack(side="left", padx=6)
+
+        center_dialog(self)
+        self.protocol("WM_DELETE_WINDOW", self._close)
+        self.after(50, self.grab_set)
+
+    def _submit(self):
+        code = self.entry.get().strip()
+        if not code:
+            return
+        try:
+            self.bell()
+        except Exception:
+            pass
+        self.on_code(code)
+        self.entry.delete(0, "end")
+        self.entry.focus_set()
+
+    def _close(self):
+        try:
+            self.grab_release()
+        except Exception:
+            pass
+        self.destroy()
 
 
 class _RegistrarProductoDialog(ctk.CTkToplevel):
@@ -1514,6 +1581,15 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
         self.protocol("WM_DELETE_WINDOW", self._safe_close)
         self.after(50, self._rebind_mousewheel)
         self.after(50, self.grab_set)
+
+        scanned = (prefill or {}).get("barcode")
+        if scanned and self.serial_table is not None and self.serial_table.rows:
+            code = str(scanned).strip()
+            bc_e = self.serial_table.rows[0].get("barcode")
+            if code and bc_e:
+                bc_e.delete(0, "end")
+                bc_e.insert(0, code)
+                self.serial_table.rows[0]["serial"].focus()
 
     def _safe_close(self):
         try:
@@ -1697,6 +1773,28 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
                 show_mac=show_mac,
             )
             self.serial_table.grid(row=1, column=0, columnspan=2, sticky="ew")
+
+            scanbar = ctk.CTkFrame(self.exist_dyn, fg_color="transparent")
+            scanbar.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+            ctk.CTkLabel(
+                scanbar,
+                text="Escanea cada código y se agregará una fila por código.",
+                font=f["hint"],
+                text_color=INK_3,
+            ).pack(side="left", padx=(0, 10))
+            self.scan_btn = ctk.CTkButton(
+                scanbar,
+                text="⌕ Escanear",
+                width=140,
+                height=34,
+                corner_radius=RADIUS_FIELD,
+                font=f["label"],
+                fg_color=V_BLUE,
+                hover_color=BLUE_D,
+                text_color=V_WHITE,
+                command=self._open_row_scanner,
+            )
+            self.scan_btn.pack(side="left")
         else:
             self.in_barcode.grid()
             self.in_nombre.grid_configure(columnspan=1)
@@ -1718,6 +1816,20 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
             self._place(self.in_stock, 1, 0, span=2)
         self.update_counter()
         self.after(10, self._rebind_mousewheel)
+
+    def _open_row_scanner(self):
+        try:
+            self.grab_release()
+        except Exception:
+            pass
+        dlg = _ScanRowDialog(self, on_code=self._add_row_from_dialog)
+        self.wait_window(dlg)
+        self.after(50, self.grab_set)
+
+    def _add_row_from_dialog(self, code):
+        code = (code or "").strip()
+        if code and getattr(self, "serial_table", None) is not None:
+            self.serial_table.add_row_with_code(code)
 
     # ── Lógica de categoría ──────────────────────────────────────────────────
     def on_categoria_change(self, nombre):
@@ -1912,7 +2024,7 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
                         MessageDialog(self, "Error", f"Código de barras duplicado: {bc}")
                         return
                     seen_bc.add(bc)
-                elif global_bc and not global_bc_used:
+                elif global_bc and not global_bc_used and global_bc not in seen_bc:
                     bc = global_bc
                     seen_bc.add(bc)
                     global_bc_used = True
