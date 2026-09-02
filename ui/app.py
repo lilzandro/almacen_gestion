@@ -1,8 +1,11 @@
 import customtkinter as ctk
+import queue
+
 from ui.login_frame import LoginFrame
 from ui.sidebar import Sidebar
 from ui.colors import *
 from database.repository import get_all_warehouses
+from core.phone_scan import start_scan_server
 
 
 class App(ctk.CTk):
@@ -16,6 +19,14 @@ class App(ctk.CTk):
         self._warehouses = []
         self._views = {}
         self._current_view_name = None
+
+        # Escaneo desde el teléfono
+        self._scan_queue = queue.Queue()
+        self._scan_handlers = []
+        self._scan_info = start_scan_server(self._scan_queue)
+        self.scan_url = self._scan_info["url"] if self._scan_info else None
+        self.after(200, self._poll_scan_queue)
+
         self._show_login()
 
     def _show_login(self):
@@ -166,3 +177,37 @@ class App(ctk.CTk):
         for w in self.winfo_children():
             w.destroy()
         self._show_login()
+
+    # ── Escaneo desde el teléfono ────────────────────────────────────────────
+    def push_scan_handler(self, handler):
+        """Registra un handler de escaneo activo (lo agrega a la pila)."""
+        if handler not in self._scan_handlers:
+            self._scan_handlers.append(handler)
+
+    def pop_scan_handler(self, handler):
+        """Retira un handler de la pila (sin importar su posición)."""
+        if handler in self._scan_handlers:
+            self._scan_handlers.remove(handler)
+
+    def _poll_scan_queue(self):
+        try:
+            while True:
+                code = self._scan_queue.get_nowait()
+                self._dispatch_scan(code)
+        except queue.Empty:
+            pass
+        self.after(200, self._poll_scan_queue)
+
+    def _dispatch_scan(self, code):
+        """Entrega el código al destino activo o al flujo por defecto."""
+        if self._scan_handlers:
+            self._scan_handlers[-1](code)
+            return
+        if not self.current_user:
+            return
+        view = self._views.get("products")
+        if view is None:
+            self._navigate("products")
+            view = self._views.get("products")
+        if view is not None and hasattr(view, "phone_scan_default"):
+            view.phone_scan_default(code)

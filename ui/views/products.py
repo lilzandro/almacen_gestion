@@ -107,6 +107,7 @@ from ventanaejemplo.widgets import (
     SerialTable,
     section_header,
 )
+from core.phone_scan import make_qr_pil
 
 _PILL_COLORS = {
     "disponible": (DISPONIBLE_BG, DISPONIBLE_FG),
@@ -218,6 +219,7 @@ class ProductsView(ctk.CTkFrame):
         self._expanded = {}
         self._last_refresh = 0.0
         self._open_after_id = None
+        self._scan_help_shown = False
         self._group_edit_fn = lambda g: self._edit_group(g)
         self.grid_rowconfigure(2, weight=1)
         self.grid_columnconfigure(0, weight=1)
@@ -274,6 +276,22 @@ class ProductsView(ctk.CTkFrame):
             border_width=1,
             border_color=AZUL_CIELO,
         ).pack(side="right")
+
+        if self.app and getattr(self.app, "scan_url", None):
+            ctk.CTkButton(
+                action_section,
+                text="📱 ¿Escaneas con tu teléfono?",
+                height=34,
+                width=200,
+                corner_radius=8,
+                command=self.show_scan_help,
+                fg_color="transparent",
+                hover_color=HOVER_MARINO,
+                text_color=AZUL_CIELO,
+                font=ctk.CTkFont(size=16, weight="bold"),
+                border_width=1,
+                border_color=AZUL_CIELO,
+            ).pack(side="left", padx=(0, 12))
 
         sf = ctk.CTkFrame(
             self, fg_color="#FFFFFF", border_width=1, border_color=AZUL_MARINO
@@ -357,7 +375,7 @@ class ProductsView(ctk.CTkFrame):
                 text=text,
                 bg=AZUL_MARINO,
                 fg="white",
-                font=("Segoe UI", 11, "bold"),
+                font=("Segoe UI", 15, "bold"),
                 anchor="w",
             ).grid(row=0, column=col, sticky="ew", padx=px, pady=4)
 
@@ -380,13 +398,13 @@ class ProductsView(ctk.CTkFrame):
                     fg_color=fg,
                     border_width=2,
                     border_color="white",
-                    font=ctk.CTkFont(size=14, weight="bold"),
+                    font=ctk.CTkFont(size=16, weight="bold"),
                 )
             else:
                 btn.configure(
                     fg_color=fg,
                     border_width=0,
-                    font=ctk.CTkFont(size=14, weight="normal"),
+                    font=ctk.CTkFont(size=16, weight="normal"),
                 )
 
     def refresh(self, force=False):
@@ -571,7 +589,8 @@ class ProductsView(ctk.CTkFrame):
         def _on_delete():
             try:
                 elim, desact = delete_product_group(
-                    group_data["name"], group_data["brand"],
+                    group_data["name"],
+                    group_data["brand"],
                     user_id=self.current_user["id"],
                     warehouse_id=wh_id,
                 )
@@ -598,7 +617,18 @@ class ProductsView(ctk.CTkFrame):
         )
 
     def _scan_barcode(self):
+        if not self._scan_help_shown:
+            self._scan_help_shown = True
+            self.show_scan_help(on_close=self._scan_barcode)
+            return
         _BarcodeScanDialog(self, on_scan=self._handle_barcode_scan)
+
+    def show_scan_help(self, on_close=None):
+        url = self.app.scan_url if self.app else None
+        if not url:
+            MessageDialog(self, "Aviso", "El escaneo móvil no está disponible.")
+            return
+        _PhoneScanHelpDialog(self, url, on_close=on_close)
 
     def _handle_barcode_scan(self, barcode):
         _RegistrarProductoDialog(
@@ -606,6 +636,14 @@ class ProductsView(ctk.CTkFrame):
             on_save=self._do_bulk_add,
             products_view=self,
             prefill={"barcode": barcode},
+        )
+
+    def phone_scan_default(self, code):
+        _RegistrarProductoDialog(
+            self,
+            on_save=self._do_bulk_add,
+            products_view=self,
+            prefill={"barcode": code},
         )
 
     def _selected_unit(self):
@@ -992,7 +1030,7 @@ class _GroupRow(ctk.CTkFrame):
             fg_color="transparent",
             hover_color=CHEVRON_HOVER,
             text_color=TEXTO_SECUNDARIO,
-            font=ctk.CTkFont(size=13),
+            font=ctk.CTkFont(size=15),
             command=self._toggle,
         )
         self.chevron.grid(row=0, column=0, padx=(12, 4))
@@ -1001,7 +1039,7 @@ class _GroupRow(ctk.CTkFrame):
         lbl = _truncating_label(
             inner,
             self.data["name"],
-            font=("Segoe UI", 12, "bold"),
+            font=("Segoe UI", 15, "bold"),
             fg=TEXTO_MODELO,
             bg=self._bg,
             anchor="w",
@@ -1013,7 +1051,7 @@ class _GroupRow(ctk.CTkFrame):
         lbl = tk.Label(
             inner,
             text=self.data["brand"] or "—",
-            font=("Segoe UI", 12),
+            font=("Segoe UI", 15),
             fg=TEXTO_MODELO,
             bg=self._bg,
             anchor="w",
@@ -1043,7 +1081,7 @@ class _GroupRow(ctk.CTkFrame):
             text=f"{count}  {unit}",
             fg_color=FONDO_BADGE,
             corner_radius=12,
-            font=ctk.CTkFont(size=11, weight="bold"),
+            font=ctk.CTkFont(size=15, weight="bold"),
             text_color=GRIS_AZULADO,
         ).grid(row=0, column=3, padx=8, sticky="w")
 
@@ -1076,14 +1114,14 @@ class _GroupRow(ctk.CTkFrame):
             pill,
             text=stock_txt,
             text_color=stock_fg,
-            font=ctk.CTkFont(size=11, weight="bold"),
+            font=ctk.CTkFont(size=15, weight="bold"),
         ).pack(side="left", padx=(0, 10), pady=3)
 
         # Col 5: proveedor
         lbl = tk.Label(
             inner,
             text=self.data["supplier_name"] or "—",
-            font=("Segoe UI", 11),
+            font=("Segoe UI", 15),
             fg=TEXTO_SECUNDARIO,
             bg=self._bg,
             anchor="w",
@@ -1103,7 +1141,7 @@ class _GroupRow(ctk.CTkFrame):
             fg_color=AZUL_MARINO,
             hover_color=AZUL_NOCHE,
             text_color="white",
-            font=ctk.CTkFont(size=11, weight="bold"),
+            font=ctk.CTkFont(size=15, weight="bold"),
             border_width=0,
         ).grid(row=0, column=6, padx=(4, 8))
 
@@ -1377,11 +1415,14 @@ class _BarcodeScanDialog(ctk.CTkToplevel):
     def __init__(self, parent, on_scan):
         super().__init__(parent)
         self.title("Escanear Código de Barras")
-        self.geometry("400x200")
+        self.geometry("460x240")
         self.resizable(False, False)
         self.configure(fg_color=BLANCO_CALIDO)
         self.transient(parent)
         self.on_scan = on_scan
+        self._app = getattr(parent, "app", None)
+        if self._app is not None:
+            self._app.push_scan_handler(self._phone_code)
 
         ctk.CTkLabel(
             self,
@@ -1400,6 +1441,22 @@ class _BarcodeScanDialog(ctk.CTkToplevel):
         self.barcode_entry.pack(pady=10, padx=20, fill="x")
         self.barcode_entry.focus()
         self.barcode_entry.select_range(0, "end")
+
+        if self._app is not None and getattr(self._app, "scan_url", None):
+            help_parent = self._app._views.get("products")
+            if help_parent is not None and hasattr(help_parent, "show_scan_help"):
+                ctk.CTkButton(
+                    self,
+                    text="📱 ¿Escaneas con tu teléfono?",
+                    height=28,
+                    fg_color="transparent",
+                    hover_color=HOVER_FILA_BG,
+                    text_color=AZUL_MARINO,
+                    font=ctk.CTkFont(size=11, weight="bold"),
+                    border_width=1,
+                    border_color=AZUL_MARINO,
+                    command=help_parent.show_scan_help,
+                ).pack(pady=(0, 4))
 
         ctk.CTkButton(
             self,
@@ -1422,7 +1479,14 @@ class _BarcodeScanDialog(ctk.CTkToplevel):
             self.grab_release()
         except Exception:
             pass
+        if self._app is not None:
+            self._app.pop_scan_handler(self._phone_code)
         self.destroy()
+
+    def _phone_code(self, code):
+        self.barcode_entry.delete(0, "end")
+        self.barcode_entry.insert(0, code)
+        self._on_accept()
 
     def _center_and_grab(self):
         center_dialog(self)
@@ -1435,6 +1499,8 @@ class _BarcodeScanDialog(ctk.CTkToplevel):
                 self.bell()
             except Exception:
                 pass
+            if self._app is not None:
+                self._app.pop_scan_handler(self._phone_code)
             self.destroy()
             self.on_scan(barcode)
 
@@ -1445,11 +1511,15 @@ class _ScanRowDialog(ctk.CTkToplevel):
     def __init__(self, parent, on_code):
         super().__init__(parent)
         self.title("Escanear Código")
-        self.geometry("440x170")
+        self.geometry("460x200")
         self.resizable(False, False)
         self.configure(fg_color=BLANCO_CALIDO)
         self.transient(parent)
         self.on_code = on_code
+        pv = getattr(parent, "products_view", None)
+        self._app = getattr(pv, "app", None) if pv is not None else None
+        if self._app is not None:
+            self._app.push_scan_handler(self._phone_code)
 
         ctk.CTkLabel(
             self,
@@ -1469,6 +1539,21 @@ class _ScanRowDialog(ctk.CTkToplevel):
         self.entry.focus()
         self.entry.select_range(0, "end")
         self.entry.bind("<Return>", lambda e: self._submit())
+
+        pv_help = pv if (pv is not None and hasattr(pv, "show_scan_help")) else None
+        if pv_help is not None and getattr(pv_help, "app", None) is not None:
+            ctk.CTkButton(
+                self,
+                text="📱 ¿Escaneas con tu teléfono?",
+                height=28,
+                fg_color="transparent",
+                hover_color=HOVER_FILA_BG,
+                text_color=AZUL_MARINO,
+                font=ctk.CTkFont(size=11, weight="bold"),
+                border_width=1,
+                border_color=AZUL_MARINO,
+                command=pv_help.show_scan_help,
+            ).pack(pady=(0, 4))
 
         btns = ctk.CTkFrame(self, fg_color="transparent")
         btns.pack(pady=(0, 12))
@@ -1511,12 +1596,126 @@ class _ScanRowDialog(ctk.CTkToplevel):
         self.entry.delete(0, "end")
         self.entry.focus_set()
 
+    def _phone_code(self, code):
+        code = (code or "").strip()
+        if not code:
+            return
+        self.on_code(code)
+        self.entry.delete(0, "end")
+
     def _close(self):
         try:
             self.grab_release()
         except Exception:
             pass
+        if self._app is not None:
+            self._app.pop_scan_handler(self._phone_code)
         self.destroy()
+
+
+class _PhoneScanHelpDialog(ctk.CTkToplevel):
+    """Guía simple para escanear con el teléfono (QR + pasos)."""
+
+    def __init__(self, parent, url, on_close=None):
+        super().__init__(parent)
+        self.title("Escanear con tu teléfono")
+        self.geometry("480x620")
+        self.resizable(False, False)
+        self.configure(fg_color=BLANCO_CALIDO)
+        self.transient(parent)
+        self.on_close = on_close
+        self._url = url
+
+        ctk.CTkLabel(
+            self,
+            text="📱 Escanear con tu teléfono",
+            font=ctk.CTkFont(size=20, weight="bold"),
+            text_color=AZUL_NOCHE,
+        ).pack(pady=(18, 4))
+
+        qr_img = make_qr_pil(url)
+        if qr_img is not None:
+            img_ctk = ctk.CTkImage(
+                light_image=qr_img,
+                dark_image=qr_img,
+                size=(240, 240),
+            )
+            ctk.CTkLabel(self, text="", image=img_ctk).pack(pady=(8, 4))
+        else:
+            ctk.CTkLabel(
+                self,
+                text=url,
+                font=ctk.CTkFont(size=14),
+                text_color=AZUL_MARINO,
+            ).pack(pady=10)
+
+        pasos = [
+            "1. Toma tu teléfono y abre la cámara.",
+            "2. Apunta la cámara a este código QR (se abre la página).",
+            "3. Si sale «No es seguro», toca Avanzado → Continuar.",
+            "4. Permite la cámara y ¡escanea los códigos!",
+        ]
+        for paso in pasos:
+            ctk.CTkLabel(
+                self,
+                text=paso,
+                font=ctk.CTkFont(size=13),
+                text_color=GRIS_AZULADO,
+                anchor="w",
+                justify="left",
+            ).pack(fill="x", padx=36, pady=2)
+
+        ctk.CTkLabel(
+            self,
+            text=f"Enlace: {url}",
+            font=ctk.CTkFont(size=10),
+            text_color=TEXTO_SECUNDARIO,
+        ).pack(pady=(12, 2))
+
+        btns = ctk.CTkFrame(self, fg_color="transparent")
+        btns.pack(pady=(10, 18))
+        ctk.CTkButton(
+            btns,
+            text="📋 Copiar enlace",
+            width=150,
+            height=38,
+            fg_color=AZUL_CERULEO,
+            hover_color=HOVER_CERULEO,
+            text_color="white",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            command=self._copy_url,
+        ).pack(side="left", padx=6)
+        ctk.CTkButton(
+            btns,
+            text="Entendido",
+            width=150,
+            height=38,
+            fg_color=AZUL_MARINO,
+            hover_color=AZUL_NOCHE,
+            text_color="white",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            command=self._done,
+        ).pack(side="left", padx=6)
+
+        center_dialog(self)
+        self.protocol("WM_DELETE_WINDOW", self._done)
+        self.after(50, self.grab_set)
+
+    def _copy_url(self):
+        try:
+            self.clipboard_clear()
+            self.clipboard_append(self._url)
+        except Exception:
+            pass
+
+    def _done(self):
+        try:
+            self.grab_release()
+        except Exception:
+            pass
+        self.destroy()
+        if self.on_close:
+            self.on_close()
 
 
 class _RegistrarProductoDialog(ctk.CTkToplevel):
@@ -1530,6 +1729,10 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
         self.products_view = products_view or parent
         self.on_save = on_save
         self._prefill = prefill or {}
+        self._app = getattr(self.products_view, "app", None)
+        if self._app is not None:
+            self._app.push_scan_handler(self._phone_code)
+        self.bind("<Destroy>", self._on_destroy_pop)
 
         suppliers = get_all_suppliers()
         self._supplier_names = ["Sin proveedor"] + [s["name"] for s in suppliers]
@@ -1597,6 +1800,22 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
         except Exception:
             pass
         self.destroy()
+
+    def _phone_code(self, code):
+        code = (code or "").strip()
+        if not code:
+            return
+        if (
+            self.control_mode == CTRL_SERIE
+            and getattr(self, "serial_table", None) is not None
+        ):
+            self.serial_table.add_row_with_code(code)
+        else:
+            self.in_barcode.set(code)
+
+    def _on_destroy_pop(self, event):
+        if event.widget is self and self._app is not None:
+            self._app.pop_scan_handler(self._phone_code)
 
     # ── Cabecera azul marino con contador ────────────────────────────────────
     def _build_header(self):
@@ -1708,9 +1927,7 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
         )
         self.in_marca = LabeledEntry(sec, f, "Marca / Fabricante")
         self.in_modelo = LabeledEntry(sec, f, "Modelo", mono=True)
-        self.in_proveedor = LabeledSelect(
-            sec, f, "Proveedor", self._supplier_names
-        )
+        self.in_proveedor = LabeledSelect(sec, f, "Proveedor", self._supplier_names)
 
         self._place(self.in_nombre, 1, 0)
         self._place(self.in_barcode, 1, 1)
@@ -1818,6 +2035,11 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
         self.after(10, self._rebind_mousewheel)
 
     def _open_row_scanner(self):
+        pv = getattr(self, "products_view", None)
+        if pv is not None and not getattr(pv, "_scan_help_shown", True):
+            pv._scan_help_shown = True
+            pv.show_scan_help(on_close=self._open_row_scanner)
+            return
         try:
             self.grab_release()
         except Exception:
@@ -2021,7 +2243,9 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
                     seen.add(serial)
                 if bc:
                     if bc in seen_bc:
-                        MessageDialog(self, "Error", f"Código de barras duplicado: {bc}")
+                        MessageDialog(
+                            self, "Error", f"Código de barras duplicado: {bc}"
+                        )
                         return
                     seen_bc.add(bc)
                 elif global_bc and not global_bc_used and global_bc not in seen_bc:
@@ -2171,7 +2395,6 @@ class _ProductDialog(ctk.CTkToplevel):
         self.destroy()
 
     # ── EDIT MODE ─────────────────────────────────────────────────────────────
-
 
     def _build_edit_mode(self, sup_names, d):
         main = ctk.CTkFrame(self, fg_color=BLANCO_CALIDO)
