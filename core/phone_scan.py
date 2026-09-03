@@ -115,9 +115,30 @@ async function loop(detector) {
     res.textContent = "Sin permiso de cámara. Autoriza la cámara en el navegador.";
     return;
   }
-  const detector = new BarcodeDetector({formats: [
-    "ean_13","ean_8","upc_a","upc_e","code_128","code_39","code_93","itf","qr_code"
-  ]});
+  const preferred = [
+    "ean_13","ean_8","upc_a","upc_e",
+    "code_128","code_39","code_93","codabar","itf",
+    "data_matrix","pdf417","aztec","qr_code"
+  ];
+  let formats = preferred;
+  try {
+    if (typeof BarcodeDetector.getSupportedFormats === "function") {
+      const supported = await BarcodeDetector.getSupportedFormats();
+      if (Array.isArray(supported) && supported.length) {
+        formats = preferred.filter((f) => supported.includes(f));
+      }
+    }
+  } catch (e) {}
+  let detector;
+  try {
+    detector = formats.length ? new BarcodeDetector({formats}) : new BarcodeDetector();
+  } catch (e) {
+    try { detector = new BarcodeDetector(); } catch (e2) {
+      res.classList.add("err");
+      res.textContent = "No se pudo iniciar el detector de códigos.";
+      return;
+    }
+  }
   loop(detector);
 })();
 </script>

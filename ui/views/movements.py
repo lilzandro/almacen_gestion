@@ -1,11 +1,20 @@
 import tkinter as tk
 import customtkinter as ctk
-from tkinter import messagebox, filedialog
+from tkinter import filedialog
 
 from ui.colors import *
-from ui.widgets import make_table, clear_tree, setup_treeview_style, center_dialog
+from ui.animations import dialog_open
+from ui.widgets import (
+    make_table,
+    clear_tree,
+    setup_treeview_style,
+    center_dialog,
+    ConfirmDialog,
+    MessageDialog,
+)
 from database.repository import (
     get_all_movements,
+    get_movement,
     get_all_employees,
     get_all_vehicles,
     get_movement_available_products,
@@ -20,6 +29,17 @@ from database.repository import (
     delete_movement,
 )
 from core.export import export_movements
+
+
+TYPE_STYLES = {
+    "todos": ("Todos", AZUL_MARINO, AZUL_NOCHE),
+    "entrada": ("Entrada", AZUL_CERULEO, HOVER_FILTRO_DISP),
+    "salida": ("Salida", NARANJA_SELECCION, HOVER_NARANJA_SEL),
+    "devolucion": ("Devolución", AMARILLO_AMBAR, HOVER_AMBAR),
+    "asignacion": ("Asignación", AZUL_CIELO, HOVER_MOV_ASIG),
+    "eliminacion": ("Eliminación", INACTIVO_BG, HOVER_MOV_CANCEL),
+    "modificacion": ("Modificación", AZUL_MARINO, AZUL_NOCHE),
+}
 
 
 class MovementsView(ctk.CTkFrame):
@@ -91,16 +111,7 @@ class MovementsView(ctk.CTkFrame):
         # Filtros por tipo
         self._type_filter = ctk.StringVar(value="todos")
         self._type_btns = {}
-        type_defs = [
-            ("todos", "Todos", AZUL_MARINO, AZUL_NOCHE),
-            ("entrada", "Entrada", AZUL_CERULEO, HOVER_FILTRO_DISP),
-            ("salida", "Salida", NARANJA_SELECCION, HOVER_NARANJA_SEL),
-            ("devolucion", "Devolución", AMARILLO_AMBAR, HOVER_AMBAR),
-            ("asignacion", "Asignación", AZUL_CIELO, HOVER_MOV_ASIG),
-            ("eliminacion", "Eliminación", INACTIVO_BG, HOVER_MOV_CANCEL),
-            ("modificacion", "Modificación", AZUL_MARINO, AZUL_NOCHE),
-        ]
-        for val, label, fg, hover in type_defs:
+        for val, (label, fg, hover) in TYPE_STYLES.items():
             btn = ctk.CTkButton(
                 sf,
                 text=label,
@@ -149,17 +160,8 @@ class MovementsView(ctk.CTkFrame):
 
     def _update_type_buttons(self):
         active = self._type_filter.get()
-        styles = {
-            "todos": (AZUL_MARINO, AZUL_NOCHE),
-            "entrada": (AZUL_CERULEO, HOVER_FILTRO_DISP),
-            "salida": (NARANJA_SELECCION, HOVER_NARANJA_SEL),
-            "devolucion": (AMARILLO_AMBAR, HOVER_AMBAR),
-            "asignacion": (AZUL_CIELO, HOVER_MOV_ASIG),
-            "eliminacion": (INACTIVO_BG, HOVER_MOV_CANCEL),
-            "modificacion": (AZUL_MARINO, AZUL_NOCHE),
-        }
         for val, btn in self._type_btns.items():
-            fg, _ = styles[val]
+            fg, _ = TYPE_STYLES[val][1:]
             if val == active:
                 btn.configure(
                     fg_color=fg,
@@ -179,9 +181,11 @@ class MovementsView(ctk.CTkFrame):
         type_ = self._type_filter.get() if hasattr(self, "_type_filter") else "todos"
         wh_id = self.app.current_warehouse_id if self.app else None
         clear_tree(self.tree)
-        rows = get_all_movements(search=q, warehouse_id=wh_id)
-        if type_ != "todos":
-            rows = [r for r in rows if r["type"] == type_]
+        rows = get_all_movements(
+            search=q,
+            warehouse_id=wh_id,
+            movement_type=None if type_ == "todos" else type_,
+        )
         for r in rows:
             self.tree.insert(
                 "",
@@ -203,7 +207,7 @@ class MovementsView(ctk.CTkFrame):
     def _selected_movement(self):
         sel = self.tree.selection()
         if not sel:
-            messagebox.showwarning("Aviso", "Selecciona un movimiento.")
+            MessageDialog(self, "Aviso", "Selecciona un movimiento.")
             return None
         return int(sel[0])
 
@@ -220,8 +224,7 @@ class MovementsView(ctk.CTkFrame):
         mid = self._selected_movement()
         if mid is None:
             return
-        rows = get_all_movements()
-        mov = next((r for r in rows if r["id"] == mid), None)
+        mov = get_movement(mid)
         if not mov:
             return
         _MovementEditDialog(
@@ -235,8 +238,6 @@ class MovementsView(ctk.CTkFrame):
         mid = self._selected_movement()
         if mid is None:
             return
-        from ui.widgets import ConfirmDialog
-
         d = ConfirmDialog(
             self,
             "Eliminar movimiento",
@@ -248,9 +249,9 @@ class MovementsView(ctk.CTkFrame):
             try:
                 delete_movement(mid)
                 self.refresh()
-                messagebox.showinfo("Éxito", "Movimiento eliminado y stock reajustado.")
+                MessageDialog(self, "Éxito", "Movimiento eliminado y stock reajustado.")
             except Exception as e:
-                messagebox.showerror("Error", str(e))
+                MessageDialog(self, "Error", str(e), is_error=True)
 
     def _register_dialog(self):
         def _on_save():
@@ -274,7 +275,7 @@ class MovementsView(ctk.CTkFrame):
         )
         if path:
             export_movements(path)
-            messagebox.showinfo("Éxito", f"Exportado en:\n{path}")
+            MessageDialog(self, "Éxito", f"Exportado en:\n{path}")
 
 
 class _SearchableMultiSelect(ctk.CTkFrame):
@@ -398,10 +399,8 @@ class _SearchableMultiSelect(ctk.CTkFrame):
             self._selected.discard(item_id)
         else:
             self._selected.add(item_id)
-            if item_id not in self._quantities:
-                self._quantities[item_id] = 1
+            self._quantities.setdefault(item_id, 1)
         self._count_label.configure(text=f"{len(self._selected)} seleccionados")
-        self._filter_items()
 
     def get_selected(self):
         if self._show_quantity:
@@ -419,8 +418,6 @@ class _SearchableMultiSelect(ctk.CTkFrame):
 
 
 class _MovementDialog(ctk.CTkToplevel):
-    TYPES = ["salida", "devolucion"]
-
     def __init__(self, parent, current_user, on_save, warehouse_id=None):
         super().__init__(parent)
         self.warehouse_id = warehouse_id
@@ -473,21 +470,25 @@ class _MovementDialog(ctk.CTkToplevel):
             text="Tipo:",
             font=ctk.CTkFont(size=14),
             text_color=TEXTO_MOV_FIELD,
-        ).pack(side="left")
-        self.type_opt = ctk.CTkOptionMenu(
-            type_frame,
-            values=self.TYPES,
-            font=ctk.CTkFont(size=14),
-            command=self._on_type_change,
-            text_color="white",
-            button_color=AZUL_MARINO,
-            button_hover_color=AZUL_NOCHE,
-            fg_color=AZUL_MARINO,
-            dropdown_font=ctk.CTkFont(size=14),
-            width=130,
-        )
-        self.type_opt.pack(side="left", padx=(10, 0))
-        self.type_opt.set("salida")
+        ).pack(side="left", padx=(0, 10))
+        self._mov_type = ctk.StringVar(value="salida")
+        self._mov_btns = {}
+        for val in ("salida", "devolucion"):
+            label, fg, hover = TYPE_STYLES[val]
+            btn = ctk.CTkButton(
+                type_frame,
+                text=label,
+                width=130,
+                height=32,
+                fg_color=fg,
+                hover_color=hover,
+                text_color="white",
+                font=ctk.CTkFont(size=13, weight="bold"),
+                command=lambda v=val: self._set_movement_type(v),
+            )
+            btn.pack(side="left", padx=(0, 8))
+            self._mov_btns[val] = btn
+        self._update_movement_type_buttons()
 
         ctk.CTkLabel(
             left,
@@ -502,33 +503,28 @@ class _MovementDialog(ctk.CTkToplevel):
             text_color=TEXTO_SECUNDARIO,
         ).pack(anchor="w", padx=15, pady=(0, 5))
 
-        # Build grouped product list
-        grouped = get_movement_available_products(warehouse_id=warehouse_id)
-        products = []
-        for g in grouped:
-            d = dict(g)
-            d["key"] = f"{g['name']}||{g['brand']}"
-            self._group_items[d["key"]] = d
-            products.append(d)
+        # Lista de productos (se llena según el tipo de movimiento)
         self._prod_select = _SearchableMultiSelect(
             left,
-            products,
+            [],
             "key",
-            lambda g: f"{g['name']}{' · ' + g['brand'] if g.get('brand') else ''}  —  {g['available']} {g['unit']} disp.",
+            lambda g: "",
             placeholder="Buscar producto...",
             fg_color=FONDO_MULTISELECT,
             show_quantity=True,
         )
+        self._load_product_options("salida")
         self._prod_select.pack(fill="both", expand=True, padx=15, pady=(0, 15))
 
         # Seriales pendientes de devolución (oculto por defecto)
         self._serial_frame = ctk.CTkFrame(left, fg_color="transparent")
-        ctk.CTkLabel(
+        self._serial_heading = ctk.CTkLabel(
             self._serial_frame,
-            text="SERIALES EN SALIDA",
+            text="SERIALES PENDIENTES DE DEVOLUCIÓN",
             font=ctk.CTkFont(size=14, weight="bold"),
             text_color=TEXTO_MOV_FIELD,
-        ).pack(anchor="w", pady=(10, 5))
+        )
+        self._serial_heading.pack(anchor="w", pady=(10, 5))
         search_serial_frame = ctk.CTkFrame(self._serial_frame, fg_color="white")
         search_serial_frame.pack(fill="x")
         ctk.CTkLabel(
@@ -549,15 +545,15 @@ class _MovementDialog(ctk.CTkToplevel):
         )
         self._serial_inner.pack(fill="both", expand=True, pady=(5, 0))
         self._serial_checkvars = {}
-        self._serial_ids = {}
         self._serial_frame.pack_forget()  # oculto hasta seleccionar devolucion
 
-        ctk.CTkLabel(
+        self._right_heading = ctk.CTkLabel(
             right,
             text="ASIGNACIÓN",
             font=ctk.CTkFont(size=14, weight="bold"),
             text_color=TEXTO_MOV_FIELD,
-        ).pack(anchor="w", padx=15, pady=(15, 10))
+        )
+        self._right_heading.pack(anchor="w", padx=15, pady=(15, 10))
 
         self._emp_frame = ctk.CTkFrame(right, fg_color="transparent")
         self._emp_frame.pack(fill="x", padx=15, pady=(0, 10))
@@ -586,7 +582,7 @@ class _MovementDialog(ctk.CTkToplevel):
             text_color=TEXTO_MOV_FIELD,
         ).pack(anchor="w", pady=(5, 5))
         vehicle_names = [
-            f"{dict(v)['brand']} - {dict(v)['plate']}" for v in self._vehicles
+            f"{v['brand']} - {v['plate']}" for v in self._vehicles
         ] or ["Sin vehículo"]
         self.vehicle_opt = ctk.CTkOptionMenu(
             self._veh_frame,
@@ -600,12 +596,13 @@ class _MovementDialog(ctk.CTkToplevel):
         )
         self.vehicle_opt.pack(fill="x")
 
-        ctk.CTkLabel(
+        self._notes_heading = ctk.CTkLabel(
             right,
             text="📝 NOTAS",
             font=ctk.CTkFont(size=14, weight="bold"),
             text_color=TEXTO_MOV_FIELD,
-        ).pack(anchor="w", padx=15, pady=(15, 5))
+        )
+        self._notes_heading.pack(anchor="w", padx=15, pady=(15, 5))
         self.notes_e = ctk.CTkEntry(
             right,
             height=80,
@@ -641,33 +638,53 @@ class _MovementDialog(ctk.CTkToplevel):
         ).pack(side="left", expand=True, padx=5)
 
         self.grab_set()
-        self.after(100, self._fit_size)
+        self.after(60, self._autosize)
+        self.after(100, lambda: dialog_open(self))
 
-    def _fit_size(self):
-        """Ajusta la ventana al tamaño natural de su contenido."""
+    def _autosize(self):
+        """Ajusta al tamaño cómodo sin contraer por debajo del mínimo."""
         self.update_idletasks()
-        w = self.winfo_reqwidth() + 20
-        h = self.winfo_reqheight() + 20
-        # No exceder el tamaño de la pantalla
-        sw = self.winfo_screenwidth()
-        sh = self.winfo_screenheight()
-        self.geometry(f"{min(w, sw)}x{min(h, sh)}")
+        w = max(self.winfo_reqwidth(), 900)
+        h = max(self.winfo_reqheight(), 720)
+        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
+        w, h = min(w, sw - 60), min(h, sh - 120)
+        x, y = self.winfo_x(), self.winfo_y()
+        self.geometry(f"{w}x{h}+{max(x, 0)}+{max(y, 0)}")
 
-    def _on_type_change(self, type_):
-        self._prod_select.pack_forget()
-        self._serial_frame.pack_forget()
+    def _update_movement_type_buttons(self):
+        active = self._mov_type.get()
+        for val, btn in self._mov_btns.items():
+            if val == active:
+                btn.configure(
+                    border_width=2,
+                    border_color="white",
+                    font=ctk.CTkFont(size=13, weight="bold"),
+                )
+            else:
+                btn.configure(
+                    border_width=0,
+                    font=ctk.CTkFont(size=13, weight="normal"),
+                )
+
+    def _set_movement_type(self, type_):
+        if self._mov_type.get() == type_:
+            return
+        self._mov_type.set(type_)
+        self._update_movement_type_buttons()
+        self._apply_movement_layout(type_)
+
+    def _load_product_options(self, type_):
+        """Carga los grupos de producto disponibles según el tipo (salida/devolución)."""
         if type_ == "salida":
-            self._emp_frame.pack(fill="x", pady=(0, 10))
-            self._veh_frame.pack(fill="x", pady=(0, 10))
-            self._prod_select.pack(fill="both", expand=True, padx=15, pady=(0, 15))
             grouped = get_movement_available_products(warehouse_id=self.warehouse_id)
+            metric = "available"
+            suffix = "disp."
         else:
-            self._emp_frame.pack_forget()
-            self._veh_frame.pack_forget()
-            self._prod_select.pack(fill="x", padx=15, pady=(0, 5))
-            self._serial_frame.pack(fill="both", expand=True, padx=15, pady=(0, 10))
-            self._load_serials_pending()
-            grouped = get_products_pending_return_grouped(warehouse_id=self.warehouse_id)
+            grouped = get_products_pending_return_grouped(
+                warehouse_id=self.warehouse_id
+            )
+            metric = "pending"
+            suffix = "pend."
 
         products = []
         self._group_items = {}
@@ -677,24 +694,47 @@ class _MovementDialog(ctk.CTkToplevel):
             self._group_items[d["key"]] = d
             products.append(d)
 
-        metric = "available" if type_ == "salida" else "pending"
-        label_fn = lambda g, m=metric: (
-            f"{g['name']}{' · ' + g['brand'] if g.get('brand') else ''}  —  {g.get(m, 0)} {g['unit']} {'disp.' if m == 'available' else 'pend.'}"
-        )
+        def label_fn(g, m=metric, s=suffix):
+            brand = f"{g['brand']}" if g.get("brand") else ""
+            return (
+                f"{g['name']}{' · ' + brand if brand else ''}  —  "
+                f"{g.get(m, 0)} {g['unit']} {s}"
+            )
         self._prod_select._items = products
         self._prod_select._item_label = label_fn
-        self._prod_select._item_key = "key"
         self._prod_select._selected = set()
         self._prod_select._quantities = {}
         self._prod_select._filter_items()
-        self.after(50, self._fit_size)
+
+    def _apply_movement_layout(self, type_):
+        """Reorganiza el panel según el tipo: en salida pide empleado/vehículo;
+        en devolución pide cantidad o seriales pendientes."""
+        self._prod_select.pack_forget()
+        self._serial_frame.pack_forget()
+        if type_ == "salida":
+            self._emp_frame.pack(
+                before=self._notes_heading, fill="x", padx=15, pady=(0, 10)
+            )
+            self._veh_frame.pack(
+                before=self._notes_heading, fill="x", padx=15, pady=(0, 10)
+            )
+            self._prod_select.pack(fill="both", expand=True, padx=15, pady=(0, 15))
+            self._right_heading.configure(text="ASIGNACIÓN A EMPLEADO")
+        else:
+            self._emp_frame.pack_forget()
+            self._veh_frame.pack_forget()
+            self._prod_select.pack(fill="x", padx=15, pady=(0, 5))
+            self._serial_frame.pack(fill="both", expand=True, padx=15, pady=(0, 10))
+            self._right_heading.configure(text="MATERIAL A DEVOLVER")
+            self._load_serials_pending()
+        self._load_product_options(type_)
+        self.after(30, self._autosize)
 
     def _load_serials_pending(self):
         """Carga la lista de seriales en estado 'no disponible' (pendientes de devolucion)."""
         for w in self._serial_inner.winfo_children():
             w.destroy()
         self._serial_checkvars = {}
-        self._serial_ids = {}
 
         search = self._serial_search_var.get().strip() if hasattr(self, "_serial_search_var") else ""
         serials = [dict(s) for s in get_serials_pending_return(
@@ -731,10 +771,9 @@ class _MovementDialog(ctk.CTkToplevel):
                 ).pack(side="right", padx=8)
 
             self._serial_checkvars[s["id"]] = var
-            self._serial_ids[s["id"]] = s
 
     def _save(self):
-        type_ = self.type_opt.get()
+        type_ = self._mov_type.get()
         notes = self.notes_e.get().strip()
         selected_employees = self._emp_select.get_selected()
 
@@ -742,14 +781,14 @@ class _MovementDialog(ctk.CTkToplevel):
 
         if type_ == "salida":
             if not selected_employees:
-                messagebox.showwarning(
-                    "Aviso", "Selecciona al menos un empleado para salida.", parent=self
+                MessageDialog(
+                    self, "Aviso", "Selecciona al menos un empleado para salida."
                 )
                 return
             selected_raw = self._prod_select.get_selected()
             if not selected_raw:
-                messagebox.showwarning(
-                    "Aviso", "Selecciona al menos un producto.", parent=self
+                MessageDialog(
+                    self, "Aviso", "Selecciona al menos un producto."
                 )
                 return
             for key, quantity in selected_raw:
@@ -772,12 +811,13 @@ class _MovementDialog(ctk.CTkToplevel):
                         result = apply_salida_quantity(name, brand, quantity, warehouse_id=self.warehouse_id)
                     items.append(result)
                 except ValueError as e:
-                    messagebox.showerror("Error", str(e), parent=self)
+                    MessageDialog(self, "Error", str(e), is_error=True)
                     return
             if not items:
-                messagebox.showwarning(
-                    "Aviso", "Ingresa cantidades válidas para al menos un producto.",
-                    parent=self,
+                MessageDialog(
+                    self,
+                    "Aviso",
+                    "Ingresa cantidades válidas para al menos un producto.",
                 )
                 return
             employee_id = selected_employees[0]
@@ -795,10 +835,10 @@ class _MovementDialog(ctk.CTkToplevel):
             ) if hasattr(self, "_serial_checkvars") else False
 
             if not has_qty and not has_serials:
-                messagebox.showwarning(
+                MessageDialog(
+                    self,
                     "Aviso",
                     "Selecciona productos por cantidad o marca seriales a devolver.",
-                    parent=self,
                 )
                 return
 
@@ -816,7 +856,7 @@ class _MovementDialog(ctk.CTkToplevel):
                         )
                         items.append(result)
                     except ValueError as e:
-                        messagebox.showerror("Error", str(e), parent=self)
+                        MessageDialog(self, "Error", str(e), is_error=True)
                         return
 
             if has_serials:
@@ -827,7 +867,7 @@ class _MovementDialog(ctk.CTkToplevel):
                         if result:
                             items.append(result)
                     except ValueError as e:
-                        messagebox.showerror("Error", str(e), parent=self)
+                        MessageDialog(self, "Error", str(e), is_error=True)
                         return
 
             if items:
@@ -876,19 +916,27 @@ class _MovementEditDialog(ctk.CTkToplevel):
         info = ctk.CTkFrame(body, fg_color=FONDO_SUBHEADER, corner_radius=6)
         info.pack(fill="x", padx=14)
         ctk.CTkLabel(
-            info, text=movement["product"],
-            font=ctk.CTkFont(size=13), text_color=GRIS_AZULADO,
+            info,
+            text=str(movement["product"]),
+            font=ctk.CTkFont(size=13),
+            text_color=GRIS_AZULADO,
+            justify="left",
+            wraplength=430,
         ).pack(side="left", padx=12, pady=8)
 
         _lbl("Tipo")
+        editable_types = ["entrada", "salida", "devolucion", "asignacion"]
+        current_type = movement["type"]
+        if current_type not in editable_types:
+            editable_types = [current_type] + editable_types
         self.type_opt = ctk.CTkOptionMenu(
             body, height=36,
             font=ctk.CTkFont(size=13), text_color="white",
             button_color=AZUL_MARINO, button_hover_color=AZUL_NOCHE,
             fg_color=AZUL_MARINO, dropdown_font=ctk.CTkFont(size=13),
-            values=["entrada", "salida", "devolucion", "asignacion"],
+            values=editable_types,
         )
-        self.type_opt.set(movement["type"])
+        self.type_opt.set(current_type)
         self.type_opt.pack(fill="x", padx=14)
 
         _lbl("Empleado")
@@ -952,7 +1000,10 @@ class _MovementEditDialog(ctk.CTkToplevel):
         try:
             qty = int(self.qty_e.get().strip() or 1)
         except ValueError:
-            messagebox.showwarning("Aviso", "Cantidad inválida.", parent=self)
+            MessageDialog(self, "Aviso", "Cantidad inválida.")
+            return
+        if qty < 1:
+            MessageDialog(self, "Aviso", "La cantidad debe ser mayor a 0.")
             return
         emp_text = self.emp_opt.get()
         emp_id = None
@@ -971,7 +1022,7 @@ class _MovementEditDialog(ctk.CTkToplevel):
                 self.notes_e.get().strip(),
             )
         except ValueError as e:
-            messagebox.showerror("Error", str(e), parent=self)
+            MessageDialog(self, "Error", str(e), is_error=True)
             return
         self.on_save()
         self.destroy()

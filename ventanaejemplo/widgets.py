@@ -81,7 +81,7 @@ class LabeledEntry(ctk.CTkFrame):
 # ── desplegable (look "select" claro con borde) ──────────────────────────────
 class LabeledSelect(ctk.CTkFrame):
     def __init__(self, master, fonts, label, values, required=False, hint=None,
-                 placeholder="Seleccionar…", command=None):
+                 placeholder="Seleccionar…", command=None, trailing=None):
         super().__init__(master, fg_color="transparent")
         self.columnconfigure(0, weight=1)
         self._cmd = command
@@ -96,7 +96,15 @@ class LabeledSelect(ctk.CTkFrame):
             fg_color=WHITE, button_color=WHITE, button_hover_color=BG_2,
             text_color=INK, dropdown_fg_color=WHITE, dropdown_text_color=INK,
             dropdown_hover_color=BLUE_SOFT, dropdown_font=fonts["input"], anchor="w")
-        self.menu.pack(fill="both", expand=True, padx=2, pady=2)
+        if callable(trailing):
+            # trailing es una fábrica: recibe el contenedor del menú y
+            # devuelve el widget extra (p. ej. un botón '＋').
+            tw = trailing(wrap)
+            tw.configure(height=FIELD_H - 6)
+            tw.pack(side="right", padx=(0, 2), pady=3)
+            self.menu.pack(side="left", fill="x", expand=True, padx=2, pady=2)
+        else:
+            self.menu.pack(fill="both", expand=True, padx=2, pady=2)
         if hint:
             ctk.CTkLabel(self, text=hint, font=fonts["hint"], text_color=INK_3,
                          anchor="w").grid(row=2, column=0, sticky="w", pady=(5, 0))
@@ -185,6 +193,8 @@ class InventoryToggle(ctk.CTkFrame):
         self._cards[value] = card
 
     def _select(self, value):
+        if getattr(self, "_locked", None) and self._locked != value:
+            return
         self.var.set(value)
         self._refresh()
         if self._cmd:
@@ -199,6 +209,28 @@ class InventoryToggle(ctk.CTkFrame):
     def get(self): return self.var.get()
     def set(self, mode):
         self.var.set(mode); self._refresh()
+
+    def show_only(self, mode):
+        """Deja visible únicamente la tarjeta del modo indicado.
+
+        Usado para que la categoría fije el tipo de control y no quede un
+        toggle libre entre 'Serie/MAC' y 'Cantidad'."""
+        self._locked = mode
+        self.var.set(mode)
+        self._refresh()
+        for value, card in self._cards.items():
+            if value == mode:
+                card.grid(row=0, column=0, columnspan=2, sticky="ew", padx=(5, 5))
+            else:
+                card.grid_remove()
+
+    def show_both(self):
+        """Restaura las dos tarjetas visibles (toggle libre)."""
+        self._locked = None
+        for col, (value, card) in enumerate(self._cards.items()):
+            card.grid(row=0, column=col, sticky="ew",
+                      padx=(0, 5) if col == 0 else (5, 0))
+        self._refresh()
 
 
 # ── tabla de seriales / MAC ──────────────────────────────────────────────────

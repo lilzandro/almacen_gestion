@@ -328,6 +328,8 @@ def get_products_grouped(search="", status_filter="todos", warehouse_id=None):
                 where += " AND p.status = 'disponible'"
             elif status_filter == "no disponible":
                 where += " AND p.status = 'no disponible'"
+            elif status_filter == "inactivo":
+                where += " AND p.status = 'inactivo'"
             else:
                 where += " AND p.status != 'inactivo'"
             if warehouse_id is not None:
@@ -357,9 +359,12 @@ def get_products_grouped(search="", status_filter="todos", warehouse_id=None):
     return _cached(key, _fetch)
 
 
-def get_units_by_model(name, brand, warehouse_id=None):
-    """Devuelve filas individuales para un modelo (name+brand)."""
-    key = ("units_by_model", name, brand, warehouse_id)
+def get_units_by_model(name, brand, warehouse_id=None, inactive_only=False):
+    """Devuelve filas individuales para un modelo (name+brand).
+
+    Por defecto excluye inactivos. Con inactive_only=True devuelve solo las
+    unidades archivadas (inactivas), p.ej. para la vista de Archivados."""
+    key = ("units_by_model", name, brand, warehouse_id, inactive_only)
     def _fetch():
         conn = get_connection()
         try:
@@ -368,6 +373,10 @@ def get_units_by_model(name, brand, warehouse_id=None):
             if warehouse_id is not None:
                 wh_filter = "AND p.warehouse_id = ?"
                 params.append(warehouse_id)
+            if inactive_only:
+                status_filter = "AND p.status = 'inactivo'"
+            else:
+                status_filter = "AND p.status != 'inactivo'"
             rows = conn.execute(
                 f"""
                 SELECT p.id, p.serial, p.mac, p.status, p.barcode,
@@ -376,7 +385,7 @@ def get_units_by_model(name, brand, warehouse_id=None):
                        p.created_at
                 FROM products p
                 WHERE p.name = ? AND COALESCE(p.brand,'') = ?
-                  AND p.status != 'inactivo'
+                  {status_filter}
                   {wh_filter}
                 ORDER BY p.id
                 """,
@@ -452,6 +461,28 @@ def get_product_by_barcode(barcode):
         return row
     finally:
         conn.close()
+
+
+def lookup_product_by_code(code):
+    """Busca un producto por código probando variantes EAN-13/UPC-A.
+
+    Un UPC-A de 12 dígitos equivale a un EAN-13 que empieza con '0'; así que
+    si el código no coincide exactamente se reintenta con/sin el cero inicial.
+
+    Retorna (row, code_matched) o (None, None)."""
+    code = (code or "").strip()
+    if not code:
+        return None, None
+    variants = [code]
+    if len(code) == 13 and code.startswith("0"):
+        variants.append(code[1:])
+    elif len(code) == 12 and code.isdigit():
+        variants.append("0" + code)
+    for v in variants:
+        row = get_product_by_barcode(v)
+        if row is not None:
+            return row, v
+    return None, None
 
 
 def get_product_by_id(product_id):
@@ -737,26 +768,109 @@ def deactivate_product(product_id):
             conn.close()
 
 
+def reactivate_product(product_id):
+    """Reactivar un producto dado de baja (vuelve a 'disponible')."""
+    conn = None
+    try:
+        conn = get_connection()
+        conn.execute(
+            "UPDATE products SET status='disponible', updated_at=datetime('now','localtime') WHERE id=?",
+            (product_id,),
+        )
+        conn.commit()
+        _invalidate_prefix("units_by_model")
+        _invalidate_prefix("products_grouped")
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        raise e
+    finally:
+        if conn:
+            conn.close()
+
+
+def reactivate_product_group(name, brand):
+    """Reactivar todas las unidades archivadas (inactivas) de un grupo.
+
+    Retorna el número de productos reactivados."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.execute(
+            "UPDATE products SET status='disponible', updated_at=datetime('now','localtime') "
+            "WHERE name = ? AND COALESCE(brand,'') = ? AND status='inactivo'",
+            (name, brand or ""),
+        )
+        count = cur.rowcount
+        conn.commit()
+        _invalidate_prefix("units_by_model")
+        _invalidate_prefix("products_grouped")
+        return count
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        raise e
+    finally:
+        if conn:
+            conn.close()
+
+
+def _backfill_movement_snapshots(conn, products):
+    """Garantiza que cada movimiento de un producto tenga su snapshot en
+    movement_items ANTES de eliminar el producto físico.
+
+    products: lista de filas con claves id, name, brand, serial, unit."""
+    for p in products:
+        pid = p["id"]
+        movements = conn.execute(
+            "SELECT id, quantity FROM movements WHERE product_id=?", (pid,)
+        ).fetchall()
+        for m in movements:
+            has = conn.execute(
+                "SELECT 1 FROM movement_items WHERE movement_id=? AND product_id=? LIMIT 1",
+                (m["id"], pid),
+            ).fetchone()
+            if not has:
+                conn.execute(
+                    """INSERT INTO movement_items
+                       (movement_id, product_id, name, brand, qty, unit, seriales)
+                       VALUES (?,?,?,?,?,?,?)""",
+                    (
+                        m["id"],
+                        pid,
+                        p["name"],
+                        p["brand"],
+                        m["quantity"] or 1,
+                        p["unit"] or "und",
+                        p["serial"] or "",
+                    ),
+                )
+
+
 def delete_product(product_id, user_id=None, notes="", warehouse_id=None):
-    """Elimina o desactiva un producto.
-    Sin movimientos → DELETE físico.
-    Con movimientos → status='inactivo'.
+    """Elimina físicamente un producto (con su historial conservado).
+
+    Antes de borrar se respalda el snapshot en movement_items para cada
+    movimiento del producto, de modo que Movimientos siga mostrando y
+    buscando su historial sin depender de la fila de producto.
     Si se proporciona user_id, registra movimiento de eliminacion.
-    Retorna: 'eliminado' | 'desactivado'."""
+    Retorna: 'eliminado'."""
     conn = None
     try:
         conn = get_connection()
         cursor = conn.cursor()
-        cursor.execute(
-            "SELECT COUNT(*) FROM movements WHERE product_id=?", (product_id,)
-        )
-        movement_count = cursor.fetchone()[0]
 
         prod = conn.execute(
-            "SELECT name, COALESCE(brand,'') AS brand FROM products WHERE id=?",
+            """SELECT id, name, COALESCE(brand,'') AS brand,
+                      COALESCE(serial,'') AS serial, COALESCE(unit,'und') AS unit
+               FROM products WHERE id=?""",
             (product_id,),
         ).fetchone()
-        prod_name = f"{prod['name']} ({prod['brand']})" if prod else str(product_id)
+        if prod is None:
+            return "eliminado"
+        prod_name = f"{prod['name']} ({prod['brand']})"
+
+        _backfill_movement_snapshots(conn, [prod])
 
         if user_id:
             conn.execute(
@@ -766,20 +880,12 @@ def delete_product(product_id, user_id=None, notes="", warehouse_id=None):
                 (user_id, notes or f"Producto eliminado: {prod_name}", warehouse_id),
             )
 
-        if movement_count > 0:
-            conn.execute(
-                "UPDATE products SET status='inactivo', updated_at=datetime('now','localtime') WHERE id=?",
-                (product_id,),
-            )
-            outcome = "desactivado"
-        else:
-            conn.execute("DELETE FROM products WHERE id=?", (product_id,))
-            outcome = "eliminado"
+        cursor.execute("DELETE FROM products WHERE id=?", (product_id,))
 
         conn.commit()
         _invalidate_prefix("units_by_model")
         _invalidate_prefix("products_grouped")
-        return outcome
+        return "eliminado"
     except Exception as e:
         if conn:
             conn.rollback()
@@ -790,43 +896,65 @@ def delete_product(product_id, user_id=None, notes="", warehouse_id=None):
 
 
 def delete_product_group(name, brand, user_id=None, notes="", warehouse_id=None):
-    """Elimina/desactiva todas las unidades de un grupo (name+brand).
-    Sin movimientos → DELETE físico. Con movimientos → status='inactivo'.
-    Retorna (eliminados: int, desactivados: int)."""
+    """Elimina físicamente todas las unidades activas de un grupo (name+brand).
+
+    Antes de borrar respalda los snapshots en movement_items por movimiento,
+    de modo que el historial quede íntegro en Movimientos.
+    Retorna (eliminados: int, 0)."""
     conn = get_connection()
     try:
         rows = conn.execute(
-            """SELECT p.id,
-                      (SELECT COUNT(*) FROM movements WHERE product_id = p.id) AS mov_count
+            """SELECT p.id, p.name, COALESCE(p.brand,'') AS brand,
+                      COALESCE(p.serial,'') AS serial, COALESCE(p.unit,'und') AS unit
                FROM products p
                WHERE p.name = ? AND COALESCE(p.brand,'') = ? AND p.status != 'inactivo'""",
             (name, brand or ""),
         ).fetchall()
-        eliminados = 0
-        desactivados = 0
-        for row in rows:
-            if row["mov_count"] == 0:
-                conn.execute("DELETE FROM products WHERE id=?", (row["id"],))
-                eliminados += 1
-            else:
-                conn.execute(
-                    "UPDATE products SET status='inactivo', updated_at=datetime('now','localtime') WHERE id=?",
-                    (row["id"],),
-                )
-                desactivados += 1
+        ids = [r["id"] for r in rows]
+        if ids:
+            _backfill_movement_snapshots(conn, rows)
+            conn.executemany("DELETE FROM products WHERE id=?", [(i,) for i in ids])
         if user_id:
             conn.execute(
                 """INSERT INTO movements
                    (type, product_id, employee_id, user_id, quantity, notes, warehouse_id)
                    VALUES ('eliminacion_grupo', 0, NULL, ?, ?, ?, ?)""",
-                (user_id, eliminados + desactivados,
-                 notes or f"Grupo eliminado: {name} ({brand}). {eliminados} eliminados, {desactivados} desactivados",
+                (user_id, len(ids),
+                 notes or f"Grupo eliminado: {name} ({brand}). {len(ids)} eliminados",
                  warehouse_id),
             )
         conn.commit()
         _invalidate_prefix("units_by_model")
         _invalidate_prefix("products_grouped")
-        return eliminados, desactivados
+        return len(ids), 0
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        conn.close()
+
+
+def purge_archived_all():
+    """Elimina físicamente todos los productos archivados (inactivos).
+
+    Respalda primero sus snapshots en movement_items. Retorna cuántos se
+    purgaron."""
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            """SELECT p.id, p.name, COALESCE(p.brand,'') AS brand,
+                      COALESCE(p.serial,'') AS serial, COALESCE(p.unit,'und') AS unit
+               FROM products p WHERE p.status = 'inactivo'"""
+        ).fetchall()
+        ids = [r["id"] for r in rows]
+        if ids:
+            _backfill_movement_snapshots(conn, rows)
+            conn.executemany("DELETE FROM products WHERE id=?", [(i,) for i in ids])
+        conn.commit()
+        if ids:
+            _invalidate_prefix("units_by_model")
+            _invalidate_prefix("products_grouped")
+        return len(ids)
     except Exception as e:
         conn.rollback()
         raise e
@@ -860,11 +988,15 @@ def product_group_exists(name, brand, exclude_name=None, exclude_brand=None):
 # ── MOVEMENTS ─────────────────────────────────────────────────────────────────
 
 
-def get_all_movements(search="", limit=200, warehouse_id=None):
+def get_all_movements(search="", limit=200, warehouse_id=None, movement_type=None):
     conn = get_connection()
     try:
         q = f"%{search}%"
-        params = [q, q, q, q]
+        params = [q, q, q, q, q]
+        type_filter = ""
+        if movement_type:
+            type_filter = "AND m.type = ?"
+            params.append(movement_type)
         wh_filter = ""
         if warehouse_id is not None:
             wh_filter = "AND m.warehouse_id = ?"
@@ -873,20 +1005,54 @@ def get_all_movements(search="", limit=200, warehouse_id=None):
         rows = conn.execute(
             f"""
             SELECT m.id, m.type, m.timestamp, m.quantity, m.employee_id,
-                   COALESCE(p.name, m.notes) AS product,
+                   COALESCE(p.name,
+                            (SELECT mi.name FROM movement_items mi
+                              WHERE mi.movement_id = m.id ORDER BY mi.id LIMIT 1),
+                            m.notes) AS product,
                    COALESCE(e.name, '-') AS employee,
                    u.username AS registered_by, m.notes
             FROM movements m
             LEFT JOIN products p ON m.product_id = p.id
             LEFT JOIN employees e ON m.employee_id = e.id
             JOIN users u ON m.user_id = u.id
-            WHERE (m.type LIKE ? OR COALESCE(p.name,'') LIKE ? OR COALESCE(p.barcode,'') LIKE ? OR COALESCE(e.name,'') LIKE ?)
+            WHERE (m.type LIKE ? OR COALESCE(p.name,'') LIKE ?
+                   OR COALESCE(p.barcode,'') LIKE ?
+                   OR COALESCE(e.name,'') LIKE ?
+                   OR EXISTS (SELECT 1 FROM movement_items mi
+                              WHERE mi.movement_id = m.id AND mi.name LIKE ?))
+            {type_filter}
             {wh_filter}
             ORDER BY m.id DESC LIMIT ?
             """,
             params,
         ).fetchall()
         return [_clean_row_product(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def get_movement(movement_id):
+    """Devuelve un solo movimiento (misma forma que get_all_movements) o None."""
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            """
+            SELECT m.id, m.type, m.timestamp, m.quantity, m.employee_id,
+                   COALESCE(p.name,
+                            (SELECT mi.name FROM movement_items mi
+                              WHERE mi.movement_id = m.id ORDER BY mi.id LIMIT 1),
+                            m.notes) AS product,
+                   COALESCE(e.name, '-') AS employee,
+                   u.username AS registered_by, m.notes
+            FROM movements m
+            LEFT JOIN products p ON m.product_id = p.id
+            LEFT JOIN employees e ON m.employee_id = e.id
+            JOIN users u ON m.user_id = u.id
+            WHERE m.id = ?
+            """,
+            (movement_id,),
+        ).fetchone()
+        return _clean_row_product(row) if row else None
     finally:
         conn.close()
 

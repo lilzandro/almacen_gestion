@@ -88,6 +88,10 @@ def initialize_db():
             unit TEXT DEFAULT 'und',
             seriales TEXT DEFAULT ''
         );
+        CREATE TABLE IF NOT EXISTS app_meta (
+            key TEXT PRIMARY KEY,
+            value TEXT DEFAULT ''
+        );
     """)
 
     # Agregar columna product_id si no existe (para bases de datos existentes)
@@ -191,8 +195,31 @@ def initialize_db():
             "INSERT INTO users (username, password_hash, role, must_change_password) VALUES (?, ?, ?, 1)",
             ("admin", admin_hash, "admin"),
         )
+    # Commit de esquema/seeds antes de continuar (evita bloqueos de la BD)
     conn.commit()
     conn.close()
+
+    # Purga única de archivados heredados: el borrado ahora es físico y el
+    # historial vive en Movimientos (con snapshots en movement_items).
+    try:
+        from database.repository import purge_archived_all
+
+        conn2 = get_connection()
+        try:
+            marker = conn2.execute(
+                "SELECT value FROM app_meta WHERE key='archived_purged_v1'"
+            ).fetchone()
+            if marker is None:
+                purged = purge_archived_all()
+                print(f"[migracion] Archivados heredados purgados: {purged}")
+                conn2.execute(
+                    "INSERT OR REPLACE INTO app_meta(key,value) VALUES('archived_purged_v1','1')"
+                )
+                conn2.commit()
+        finally:
+            conn2.close()
+    except Exception as e:
+        print(f"[migracion] No se pudo purgar archivados heredados: {e}")
 
     # Permisos restrictivos al archivo de BD (solo dueño puede leer/escribir)
     try:
