@@ -128,7 +128,16 @@ def center_dialog(dialog):
     dialog_w = dialog.winfo_width()
     dialog_h = dialog.winfo_height()
     if dialog_w <= 1 or dialog_h <= 1:
-        # Ventana aún no mapeada (withdrawn): recuperar tamaño real de la geometría
+        # Ventana aún no mapeada (withdrawn): recuperar el tamaño pedido.
+        # BaseDialog recuerda el último tamaño explícito ("450x280").
+        last = getattr(dialog, "_last_size", None)
+        if last and "x" in last:
+            try:
+                w, h = last.split("x")
+                dialog_w, dialog_h = int(w), int(h)
+            except Exception:
+                pass
+    if dialog_w <= 1 or dialog_h <= 1:
         try:
             geom = dialog.winfo_geometry()
             if geom and "x" in geom:
@@ -157,7 +166,62 @@ def center_dialog(dialog):
     dialog.geometry(f"+{x}+{y}")
 
 
-class ConfirmDialog(ctk.CTkToplevel):
+def show_centered(dialog):
+    """Muestra un Toplevel ya centrado, evitando el salto de posición.
+
+    Oculta la ventana hasta aplicar la geometría final (sin pasar por una
+    posición intermedia visible) y luego la muestra. Llamar como ÚLTIMA
+    instrucción del __init__ del diálogo (antes de que mainloop la pinte).
+    Es idempotente: una segunda llamada no vuelve a ocultar/mostrar la ventana.
+    """
+    if getattr(dialog, "_sc_shown", False):
+        return
+    try:
+        dialog.withdraw()
+        center_dialog(dialog)
+    except Exception:
+        pass
+    try:
+        dialog.deiconify()
+    except Exception:
+        pass
+    try:
+        dialog._sc_shown = True
+    except Exception:
+        pass
+
+
+class BaseDialog(ctk.CTkToplevel):
+    """Toplevel que nace oculto hasta que se muestra con show_centered(self).
+
+    Evita que cualquier update_idletasks() hecho durante la construcción de la
+    ventana (tablas, scrollframes, etc.) la mapee en una posición intermedia:
+    sin esto se pinta en la posición por defecto y luego se oculta/recentra,
+    visible como "se abre en un lugar, se cierra y se abre en otro".
+    """
+
+    def __init__(self, master=None, **kwargs):
+        super().__init__(master, **kwargs)
+        self._last_size = None
+        try:
+            self.withdraw()
+        except Exception:
+            pass
+
+    def geometry(self, geometry_string=None):
+        """Recuerda el tamaño explícito mientras la ventana está sin mapear.
+
+        Tk no conserva el tamaño de un Toplevel que nunca se ha mapeado, así
+        que lo guardamos para que center_dialog pueda centrarlo correctamente.
+        """
+        if geometry_string:
+            size = str(geometry_string).strip().split("+", 1)[0]
+            if "x" in size:
+                self._last_size = size
+        return super().geometry(geometry_string)
+
+
+class ConfirmDialog(BaseDialog):
     """Diálogo de confirmación con botones Sí/No."""
 
     def __init__(self, parent, title, message, is_danger=False):
@@ -166,7 +230,6 @@ class ConfirmDialog(ctk.CTkToplevel):
         self.resizable(False, False)
         self.configure(fg_color=BLANCO_CALIDO)
         self.result = False
-        self.after_idle(lambda: center_dialog(self))
 
         ctk.CTkLabel(
             self,
@@ -221,6 +284,7 @@ class ConfirmDialog(ctk.CTkToplevel):
         ).pack(side="left", padx=10)
 
         self.update_idletasks()
+        show_centered(self)
         self.grab_set()
 
     def _on_yes(self):
@@ -232,7 +296,7 @@ class ConfirmDialog(ctk.CTkToplevel):
         self.destroy()
 
 
-class MessageDialog(ctk.CTkToplevel):
+class MessageDialog(BaseDialog):
     """Diálogo de mensaje informativo o de error."""
 
     def __init__(self, parent, title, message, is_error=False):
@@ -240,7 +304,6 @@ class MessageDialog(ctk.CTkToplevel):
         self.title(title)
         self.resizable(False, False)
         self.configure(fg_color=BLANCO_CALIDO)
-        self.after_idle(lambda: center_dialog(self))
 
         icon_color = NARANJA_INTENSO if is_error else AZUL_CERULEO
         icon_text = "✕" if is_error else "✓"
@@ -286,4 +349,5 @@ class MessageDialog(ctk.CTkToplevel):
         ).pack(pady=15)
 
         self.update_idletasks()
+        show_centered(self)
         self.grab_set()

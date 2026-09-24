@@ -1,15 +1,21 @@
 import sqlite3
 import os
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "inventory.db")
+_DEFAULT_DB = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "inventory.db"
+)
+# Ruta de la BD configurable (útil en Docker: INVENTORY_DB=/app/data/inventory.db)
+DB_PATH = os.environ.get("INVENTORY_DB", _DEFAULT_DB)
 
 
 def get_connection() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    os.makedirs(os.path.dirname(os.path.abspath(DB_PATH)), exist_ok=True)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute("PRAGMA busy_timeout=30000")
     return conn
 
 

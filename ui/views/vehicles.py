@@ -1,7 +1,14 @@
 import customtkinter as ctk
-from tkinter import messagebox
 from ui.colors import *
-from ui.widgets import make_table, clear_tree, setup_treeview_style
+from ui.widgets import (
+    make_table,
+    clear_tree,
+    setup_treeview_style,
+    BaseDialog,
+    show_centered,
+    MessageDialog,
+    ConfirmDialog,
+)
 from database.repository import (
     get_all_vehicles,
     create_vehicle,
@@ -78,17 +85,17 @@ class VehiclesView(ctk.CTkFrame):
 
         af = ctk.CTkFrame(self, fg_color=BLANCO_CALIDO)
         af.grid(row=3, column=0, sticky="ew", padx=20, pady=(4, 10))
-        ctk.CTkButton(
-            af,
-            text="✏️ Editar",
-            width=120,
-            height=34,
-            command=self._edit_dialog,
-            fg_color=AZUL_MARINO,
-            hover_color=SIDEBAR_HOVER,
-            text_color="white",
-        ).pack(side="left", padx=4)
         if self.current_user["role"] == "admin":
+            ctk.CTkButton(
+                af,
+                text="✏️ Editar",
+                width=120,
+                height=34,
+                command=self._edit_dialog,
+                fg_color=AZUL_MARINO,
+                hover_color=SIDEBAR_HOVER,
+                text_color="white",
+            ).pack(side="left", padx=4)
             ctk.CTkButton(
                 af,
                 text="🗑️ Eliminar",
@@ -121,7 +128,7 @@ class VehiclesView(ctk.CTkFrame):
     def _selected(self):
         sel = self.tree.focus()
         if not sel:
-            messagebox.showwarning("Aviso", "Selecciona un vehículo.")
+            MessageDialog(self, "Aviso", "Selecciona un vehículo.")
         return sel or None
 
     def _add_dialog(self):
@@ -151,12 +158,21 @@ class VehiclesView(ctk.CTkFrame):
         iid = self._selected()
         if not iid:
             return
-        if messagebox.askyesno("Confirmar", "¿Eliminar este vehículo?"):
+        dlg = ConfirmDialog(
+            self, "Eliminar vehículo", "¿Eliminar este vehículo?", is_danger=True
+        )
+        self.wait_window(dlg)
+        if not dlg.result:
+            return
+        try:
             delete_vehicle(int(iid))
-            self.refresh()
+        except Exception as e:
+            MessageDialog(self, "Error", str(e), is_error=True)
+            return
+        self.refresh()
 
 
-class _VehicleDialog(ctk.CTkToplevel):
+class _VehicleDialog(BaseDialog):
     def __init__(self, parent, title, on_save, initial=None):
         super().__init__(parent)
         self.title(title)
@@ -288,38 +304,45 @@ class _VehicleDialog(ctk.CTkToplevel):
             height=45,
             command=self.destroy,
         ).pack(side="left", expand=True, padx=5)
+        show_centered(self)
+
 
     def _save(self):
         import re
 
         brand = self.brand_e.get().strip()
         if not brand:
-            messagebox.showwarning("Aviso", "La marca es obligatoria.", parent=self)
+            MessageDialog(self, "Aviso", "La marca es obligatoria.")
             return
         if not re.match(r"^[a-zA-Z0-9\s\-]+$", brand):
-            messagebox.showwarning("Aviso", "Marca inválida.", parent=self)
+            MessageDialog(self, "Aviso", "Marca inválida.")
             return
 
         model = self.model_e.get().strip()
         if model and not re.match(r"^[a-zA-Z0-9\s\-]+$", model):
-            messagebox.showwarning("Aviso", "Modelo inválido.", parent=self)
+            MessageDialog(self, "Aviso", "Modelo inválido.")
             return
 
         plate = self.plate_e.get().strip().upper()
         if not plate:
-            messagebox.showwarning("Aviso", "La placa es obligatoria.", parent=self)
+            MessageDialog(self, "Aviso", "La placa es obligatoria.")
             return
         if not re.match(r"^[A-Z0-9]{5,8}$", plate):
-            messagebox.showwarning(
-                "Aviso", "Placa inválida (5-8 caracteres alfanuméricos).", parent=self
-            )
+            MessageDialog(self, "Aviso", "Placa inválida (5-8 caracteres alfanuméricos).")
             return
 
-        self.on_save(
-            {
-                "brand": brand.upper(),
-                "model": model.upper() if model else "",
-                "plate": plate,
-            }
-        )
+        try:
+            self.on_save(
+                {
+                    "brand": brand.upper(),
+                    "model": model.upper() if model else "",
+                    "plate": plate,
+                }
+            )
+        except Exception as e:
+            msg = str(e)
+            if "plate" in msg.lower() or "unique" in msg.lower():
+                msg = "Ya existe un vehículo con esa placa."
+            MessageDialog(self, "Error", msg, is_error=True)
+            return
         self.destroy()

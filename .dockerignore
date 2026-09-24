@@ -1,6 +1,26 @@
+# Entornos virtuales
 .venv/
 venv/
 env/
+
+# Base de datos (se monta en runtime; no debe hornearse en la imagen)
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+data/
+
+# Respaldos y material de diseño/documentación (no se usan en runtime)
+backup/
+backup_movimientos_pre_redesign/
+design_handoff_movimientos/
+docs/
+md/
+tests/
+.github/
+
+# Python
 __pycache__/
 *.py[cod]
 *.pyo
@@ -8,14 +28,21 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+
+# Herramientas / caches
+.ruff_cache/
+.pytest_cache/
+.git/
+.gitignore
 .idea/
 .vscode/
-.DS_Store
 *.log
 *.tmp
 *.swp
 *.swo
 .claude/
-inventario.db
-md/
-docs/
+
+# Documentación de repo
+*.md
+TEMA*.txt
+requirements-dev.txt

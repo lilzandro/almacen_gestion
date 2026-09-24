@@ -1,0 +1,18 @@
+# Docker Compose para macOS (Docker Desktop + XQuartz).
+# Requisitos:
+#   - Docker Desktop para macOS.
+#   - XQuartz con "Permitir conexiones de clientes de red" activado.
+#   - En una terminal: xhost +localhost
+# Ejecutar:
+#   docker compose -f docker-compose.macos.yml up --build
+services:
+  app:
+    build: .
+    environment:
+      - DISPLAY=host.docker.internal:0
+      - INVENTORY_DB=/app/data/inventory.db
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "8765:8765"
+    restart: "no"

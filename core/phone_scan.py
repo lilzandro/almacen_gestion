@@ -11,7 +11,6 @@ dependencias ni internet) y recibe los códigos escaneados vía POST /scan.
 """
 
 import json
-import queue
 import secrets
 import socket
 import ssl
@@ -23,6 +22,34 @@ import os
 _CERT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "certs")
 CERT_FILE = os.path.join(_CERT_DIR, "cert.pem")
 KEY_FILE = os.path.join(_CERT_DIR, "key.pem")
+
+
+def _ensure_cert() -> bool:
+    """Genera un certificado autofirmado si no existe (no se versiona la clave)."""
+    if os.path.exists(CERT_FILE) and os.path.exists(KEY_FILE):
+        return True
+    try:
+        import shutil as _shutil
+        import subprocess
+
+        openssl = _shutil.which("openssl")
+        if not openssl:
+            return False
+        os.makedirs(_CERT_DIR, exist_ok=True)
+        subprocess.run(
+            [
+                openssl, "req", "-x509", "-newkey", "rsa:2048", "-nodes",
+                "-keyout", KEY_FILE, "-out", CERT_FILE, "-days", "3650",
+                "-subj", "/CN=digicable-inventory",
+            ],
+            check=True,
+            capture_output=True,
+            timeout=30,
+        )
+        return True
+    except Exception as e:
+        print(f"[phone_scan] No se pudo generar el certificado: {e}")
+        return False
 
 _SCAN_PAGE = """<!doctype html>
 <html lang="es">
@@ -236,6 +263,9 @@ def start_scan_server(scan_queue, host="0.0.0.0", port=8765):
     Retorna dict con {url, token, server} o None si no se pudo iniciar.
     """
     try:
+        if not _ensure_cert():
+            print("[phone_scan] Certificado no disponible; escaneo móvil deshabilitado.")
+            return None
         token = generate_token()
         handler = _make_handler(scan_queue, token)
         server = ThreadingHTTPServer((host, port), handler)

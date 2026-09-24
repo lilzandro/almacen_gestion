@@ -1,7 +1,14 @@
 import customtkinter as ctk
-from tkinter import messagebox
 from ui.colors import *
-from ui.widgets import make_table, clear_tree, setup_treeview_style
+from ui.widgets import (
+    make_table,
+    clear_tree,
+    setup_treeview_style,
+    BaseDialog,
+    show_centered,
+    MessageDialog,
+    ConfirmDialog,
+)
 from database.repository import (
     get_all_suppliers,
     create_supplier,
@@ -30,15 +37,16 @@ class SuppliersView(ctk.CTkFrame):
             font=ctk.CTkFont(size=26, weight="bold"),
             text_color=AZUL_NOCHE,
         ).pack(side="left")
-        ctk.CTkButton(
-            hdr,
-            text="+ Agregar Proveedor",
-            height=36,
-            command=self._add_dialog,
-            fg_color=NARANJA_SELECCION,
-            hover_color=HOVER_NARANJA_SEL,
-            text_color="white",
-        ).pack(side="right")
+        if self.current_user.get("role") == "admin":
+            ctk.CTkButton(
+                hdr,
+                text="+ Agregar Proveedor",
+                height=36,
+                command=self._add_dialog,
+                fg_color=NARANJA_SELECCION,
+                hover_color=HOVER_NARANJA_SEL,
+                text_color="white",
+            ).pack(side="right")
 
         # Search
         sf = ctk.CTkFrame(
@@ -81,32 +89,37 @@ class SuppliersView(ctk.CTkFrame):
         # Actions
         af = ctk.CTkFrame(self, fg_color=BLANCO_CALIDO)
         af.grid(row=3, column=0, sticky="ew", padx=20, pady=(4, 10))
-        ctk.CTkButton(
-            af,
-            text="✏️ Editar",
-            width=120,
-            height=34,
-            command=self._edit_dialog,
-            fg_color=AZUL_MARINO,
-            hover_color=SIDEBAR_HOVER,
-            text_color="white",
-        ).pack(side="left", padx=4)
-        ctk.CTkButton(
-            af,
-            text="🗑️ Eliminar",
-            width=120,
-            height=34,
-            fg_color=AZUL_MARINO,  # Secundario
-            hover_color=SIDEBAR_HOVER,
-            text_color="white",
-            command=self._delete,
-        ).pack(side="left", padx=4)
+        if self.current_user.get("role") == "admin":
+            ctk.CTkButton(
+                af,
+                text="✏️ Editar",
+                width=120,
+                height=34,
+                command=self._edit_dialog,
+                fg_color=AZUL_MARINO,
+                hover_color=SIDEBAR_HOVER,
+                text_color="white",
+            ).pack(side="left", padx=4)
+            ctk.CTkButton(
+                af,
+                text="🗑️ Eliminar",
+                width=120,
+                height=34,
+                fg_color=AZUL_MARINO,  # Secundario
+                hover_color=SIDEBAR_HOVER,
+                text_color="white",
+                command=self._delete,
+            ).pack(side="left", padx=4)
 
     def refresh(self):
         q = self._search.get().lower() if hasattr(self, "_search") else ""
         clear_tree(self.tree)
         for r in get_all_suppliers():
-            if q in r["name"].lower() or q in (r["contact"] or "").lower():
+            if (
+                q in r["name"].lower()
+                or q in (r["contact"] or "").lower()
+                or q in (r["rif"] or "").lower()
+            ):
                 self.tree.insert(
                     "",
                     "end",
@@ -123,7 +136,7 @@ class SuppliersView(ctk.CTkFrame):
     def _selected(self):
         sel = self.tree.focus()
         if not sel:
-            messagebox.showwarning("Aviso", "Selecciona un proveedor.")
+            MessageDialog(self, "Aviso", "Selecciona un proveedor.")
         return sel or None
 
     def _add_dialog(self):
@@ -153,12 +166,21 @@ class SuppliersView(ctk.CTkFrame):
         iid = self._selected()
         if not iid:
             return
-        if messagebox.askyesno("Confirmar", "¿Eliminar este proveedor?"):
+        dlg = ConfirmDialog(
+            self, "Eliminar proveedor", "¿Eliminar este proveedor?", is_danger=True
+        )
+        self.wait_window(dlg)
+        if not dlg.result:
+            return
+        try:
             delete_supplier(int(iid))
-            self.refresh()
+        except Exception as e:
+            MessageDialog(self, "Error", str(e), is_error=True)
+            return
+        self.refresh()
 
 
-class _SupplierDialog(ctk.CTkToplevel):
+class _SupplierDialog(BaseDialog):
     def __init__(self, parent, title, on_save, initial=None):
         super().__init__(parent)
         self.title(title)
@@ -290,37 +312,40 @@ class _SupplierDialog(ctk.CTkToplevel):
             height=45,
             command=self.destroy,
         ).pack(side="left", expand=True, padx=5)
+        show_centered(self)
+
 
     def _save(self):
         import re
 
         name = self.name_e.get().strip()
         if not name:
-            messagebox.showwarning("Aviso", "El nombre es obligatorio.", parent=self)
+            MessageDialog(self, "Aviso", "El nombre es obligatorio.")
             return
         if not re.match(r"^[a-zA-Z0-9\s\-_.,áéíóúÁÉÍÓÚÑñ]+$", name):
-            messagebox.showwarning(
-                "Aviso", "El nombre contiene caracteres inválidos.", parent=self
-            )
+            MessageDialog(self, "Aviso", "El nombre contiene caracteres inválidos.")
             return
 
         contact = self.contact_e.get().strip()
         if contact and not re.match(r"^[a-zA-Z0-9\s\-_.,áéíóúÁÉÍÓÚÑñ]+$", contact):
-            messagebox.showwarning(
-                "Aviso", "Contacto con caracteres inválidos.", parent=self
-            )
+            MessageDialog(self, "Aviso", "Contacto con caracteres inválidos.")
             return
 
         rif = self.rif_e.get().strip().upper()
         if rif and not re.match(r"^[A-Z0-9\-]{6,15}$", rif):
-            messagebox.showwarning("Aviso", "Rif inválido.", parent=self)
+            MessageDialog(self, "Aviso", "Rif inválido.")
             return
 
-        self.on_save(
-            {
-                "name": name.upper(),
-                "contact": contact.upper() if contact else "",
-                "rif": rif if rif else "",
-            }
-        )
+        try:
+            self.on_save(
+                {
+                    "name": name.upper(),
+                    "contact": contact.upper() if contact else "",
+                    "rif": rif if rif else "",
+                }
+            )
+        except Exception as e:
+            MessageDialog(self, "Error", f"No se pudo guardar el proveedor:\n{e}",
+                          is_error=True)
+            return
         self.destroy()

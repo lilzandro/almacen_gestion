@@ -1,12 +1,21 @@
+# Docker Compose para Linux (Docker Engine nativo).
+# Requiere un servidor X accesible desde el contenedor.
+# Antes de `docker compose up`, habilitar acceso X local:
+#     xhost +local:docker
 services:
   app:
     build: .
     environment:
-      - DISPLAY=${DISPLAY}
-      - XAUTHORITY=${XAUTHORITY:-/root/.Xauthority}
+      - DISPLAY=${DISPLAY:-:0}
+      - XAUTHORITY=/root/.Xauthority
+      - INVENTORY_DB=/app/data/inventory.db
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      # Cookie de autenticación X (el host debe tener XAUTHORITY definido).
       - ${XAUTHORITY:-/root/.Xauthority}:/root/.Xauthority:ro
-      - ./inventory.db:/app/inventory.db
+      # Persistencia de la base de datos en una carpeta del proyecto.
+      - ./data:/app/data
+    # Necesario para que el escaneo por teléfono (puerto 8765) sea accesible
+    # en la red local con la IP del host.
     network_mode: host
-    restart: unless-stopped
+    restart: "no"

@@ -1,6 +1,6 @@
 # 📦 DigiCable — Sistema de Control de Inventarios
 
-Aplicación de escritorio para gestionar inventario de almacén. Desarrollada con Python y CustomTkinter, con base de datos SQLite local y exportación a Excel.
+Aplicación de escritorio para gestionar inventario de almacén. Desarrollada con Python y CustomTkinter, con base de datos SQLite local y exportación de reportes a PDF.
 
 ---
 
@@ -9,7 +9,7 @@ Aplicación de escritorio para gestionar inventario de almacén. Desarrollada co
 - Gestión de productos con código de barras, serial y MAC
 - Control de proveedores, empleados y vehículos
 - Registro de movimientos de stock (entrada, salida, devolución, asignación)
-- Exportación de reportes a Excel
+- Exportación de reportes a PDF
 - Control de acceso por roles (`admin` / `supervisor`)
 - Baja lógica de productos
 
@@ -22,7 +22,7 @@ Aplicación de escritorio para gestionar inventario de almacén. Desarrollada co
 | Python 3.11 | Lenguaje principal |
 | CustomTkinter | Interfaz gráfica |
 | SQLite | Base de datos local |
-| openpyxl | Exportación Excel |
+| reportlab | Generación de reportes PDF |
 | Pillow | Logo y recursos gráficos |
 
 ---
@@ -55,6 +55,10 @@ python main.py
 ## Ejecución con Docker
 
 Docker permite correr la app sin instalar Python ni dependencias en el host. La ventana gráfica se muestra en el escritorio del sistema operativo.
+
+**Guías completas:**
+- 👤 [Guía para el cliente](docs/GUIA_DOCKER_CLIENTE.md) — cómo abrir y usar el sistema paso a paso.
+- 🛠️ [Guía de soporte técnico](docs/GUIA_DOCKER_SOPORTE.md) — instalación, operación y resolución de problemas.
 
 ### Linux
 
@@ -93,7 +97,7 @@ docker compose -f docker-compose.windows.yml up --build
 # En XQuartz: Preferencias → Seguridad → ✅ Permitir conexiones de clientes de red
 
 xhost +localhost
-DISPLAY=host.docker.internal:0 docker compose up --build
+docker compose -f docker-compose.macos.yml up --build
 ```
 
 ### Detener el contenedor
@@ -102,7 +106,7 @@ DISPLAY=host.docker.internal:0 docker compose up --build
 docker compose down
 ```
 
-> La base de datos (`inventory.db`) se persiste en el directorio del proyecto y sobrevive reinicios del contenedor.
+> La base de datos vive en `./data/inventory.db` (carpeta del proyecto) y sobrevive reinicios del contenedor. Respaldá copiando la carpeta `data/`.
 
 ---
 
@@ -112,18 +116,28 @@ docker compose down
 scanner_inventory/
 ├── main.py                 # Punto de entrada
 ├── requirements.txt
+├── Dockerfile
+├── docker-compose.yml            # Linux
+├── docker-compose.windows.yml    # Windows (VcXsrv)
+├── docker-compose.macos.yml      # macOS (XQuartz)
 ├── database/
-│   ├── connection.py       # Conexión SQLite (WAL mode, FK ON)
+│   ├── connection.py       # Conexión SQLite (WAL, FK ON, ruta por env)
 │   └── repository.py       # CRUD por entidad
 ├── core/
 │   ├── auth.py             # Login y hash de contraseña
-│   └── export.py           # Exportación Excel
+│   ├── export.py           # Reportes PDF (datos)
+│   └── pdf_export.py       # Render PDF (reportlab)
 ├── ui/
 │   ├── app.py              # Router de vistas
 │   ├── login_frame.py
 │   ├── sidebar.py
 │   ├── widgets.py          # Componentes reutilizables
 │   └── views/              # Una vista por módulo
+├── docs/
+│   ├── GUIA_DOCKER_CLIENTE.md    # Guía de uso (cliente)
+│   └── GUIA_DOCKER_SOPORTE.md    # Guía técnica (soporte)
+├── tests/                  # Pruebas (pytest)
+├── data/                   # Base de datos persistida (Docker)
 ├── img/                    # Logo y recursos
 └── md/                     # Documentación interna
 ```
@@ -133,7 +147,8 @@ scanner_inventory/
 ## Consideraciones
 
 - **Roles:** `admin` tiene acceso total incluyendo gestión de usuarios. `supervisor` no puede gestionar usuarios ni eliminar registros.
-- **Productos con movimientos:** no se pueden eliminar físicamente. Se da de baja con estado `inactivo`.
+- **Productos con movimientos:** `delete_product()` borra físicamente conservando el historial en `movement_items`; `deactivate_product()` los deja en estado `inactivo`.
 - **Campos únicos:** `barcode`, `cedula` (empleados) y `placa` (vehículos) no permiten duplicados.
+- **Reportes PDF:** requieren `reportlab` (incluido en `requirements.txt`). Si falta, la app abre igual y al exportar muestra un aviso para instalarlo.
 - **Base de datos:** SQLite en modo WAL. No requiere servidor de base de datos.
 - **Primera ejecución:** la base de datos se crea automáticamente con el usuario `admin` al iniciar.

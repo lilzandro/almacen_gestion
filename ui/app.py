@@ -40,7 +40,8 @@ class App(ctk.CTk):
         overlay = ctk.CTkFrame(self, fg_color=BLANCO_CALIDO)
         overlay.place(relwidth=1, relheight=1)
         ctk.CTkLabel(
-            overlay, text="Cargando...",
+            overlay,
+            text="Cargando...",
             font=ctk.CTkFont(size=26, weight="bold"),
             text_color=AZUL_NOCHE,
         ).place(relx=0.5, rely=0.5, anchor="center")
@@ -48,7 +49,9 @@ class App(ctk.CTk):
 
         # Construir interfaz post-login
         self._warehouses = get_all_warehouses()
-        self.current_warehouse_id = self._warehouses[0]["id"] if self._warehouses else None
+        self.current_warehouse_id = (
+            self._warehouses[0]["id"] if self._warehouses else None
+        )
 
         self._sidebar = Sidebar(
             self,

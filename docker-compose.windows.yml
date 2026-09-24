@@ -1,8 +1,19 @@
+# Docker Compose para Windows (Docker Desktop + VcXsrv).
+# Requisitos:
+#   - Docker Desktop para Windows.
+#   - VcXsrv (XLaunch) con "Disable access control" y "Multiple windows".
+# Ejecutar:
+#   docker compose -f docker-compose.windows.yml up --build
 services:
   app:
     build: .
     environment:
       - DISPLAY=host.docker.internal:0
+      - INVENTORY_DB=/app/data/inventory.db
     volumes:
-      - ./inventory.db:/app/inventory.db
-    restart: unless-stopped
+      - ./data:/app/data
+    # Docker Desktop no soporta network_mode: host; publicamos el puerto del
+    # escáner por teléfono (el teléfono debe usar la IP de la PC:8765).
+    ports:
+      - "8765:8765"
+    restart: "no"

@@ -4,10 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Información del Proyecto
 
-**DigiCable - Sistema de Control de Inventarios** es una aplicación de escritorio para gestionar inventario de almacén. Permite registrar productos, proveedores, empleados, vehículos, movimientos de stock y exportar reportes Excel.
+**DigiCable - Sistema de Control de Inventarios** es una aplicación de escritorio para gestionar inventario de almacén. Permite registrar productos, proveedores, empleados, vehículos, movimientos de stock y exportar reportes PDF.
 
 **Stack:**
-- Python 3.10+, CustomTkinter (UI), SQLite (BD), openpyxl (Excel), Pillow (logo)
+- Python 3.10+, CustomTkinter (UI), SQLite (BD), reportlab (PDF), Pillow (logo)
 
 **Ejecución:**
 ```bash
@@ -34,7 +34,7 @@ database/
   repository.py      → todas las funciones CRUD por entidad
 core/
   auth.py            → login(), hash_password()
-  export.py          → export_movements(), export_products()  [openpyxl]
+  export.py          → export_movements(), export_inventory()  [reportlab]
 ui/
   app.py             → App: router de vistas via _navigate() / _get_view_class()
   login_frame.py     → LoginFrame
@@ -87,7 +87,7 @@ products(id, name, barcode UNIQUE, brand, serial, mac, quantity,
          status, supplier_id→suppliers, created_at, updated_at)
   status: 'disponible' | 'no disponible' | 'inactivo'
   Baja lógica: usar deactivate_product() — no eliminar si tiene movimientos
-  Eliminación física: delete_product() lanza ValueError si hay movimientos
+  Eliminación física: delete_product() borra y respalda snapshots en movement_items
 
 movements(id, type, product_id→products, employee_id→employees,
           user_id→users, quantity, notes, timestamp)
@@ -153,10 +153,10 @@ if ConfirmDialog(self, "¿Eliminar?").result:
     delete_x(id)
 ```
 
-**Exportación Excel** — agregar función en `core/export.py`, llamar desde botón:
+**Reportes PDF** — agregar función en `core/export.py`, llamar desde botón:
 ```python
 from core.export import export_movements
-export_movements(filepath)
+export_movements(filepath, movements=rows, warehouse_name=..., filters_text=...)
 ```
 
 ---
@@ -165,7 +165,7 @@ export_movements(filepath)
 
 - **Permisos**: verificar `current_user["role"]` antes de habilitar botones. `UsersView` solo es accesible para `admin`.
 - **IntegrityError**: campos únicos (`barcode`, `cedula`, `plate`) lanzarán error si se duplican — capturar en la vista.
-- **Soft delete de productos**: productos con movimientos NO se pueden eliminar físicamente. Usar `deactivate_product()` que pone `status='inactivo'`. El filtro por defecto en `get_all_products()` excluye inactivos.
+- **Baja de productos**: `deactivate_product()` pone `status='inactivo'`; `delete_product()` borra físicamente conservando el historial en `movement_items`. El filtro por defecto excluye inactivos.
 - **Logo**: `img/logo_sidebar.png` — si no existe, Sidebar cae en un emoji de fallback.
 - **Modo de apariencia**: `main.py` usa `ctk.set_appearance_mode("light")`.
 

@@ -101,12 +101,11 @@ class DashboardView(ctk.CTkFrame):
         cards_frame = ctk.CTkFrame(self, fg_color=BLANCO_CALIDO)
         cards_frame.grid(row=1, column=0, sticky="ew", padx=20, pady=10)
 
-        # Configure grid for all stats in a single row (5 columns)
+        # Configure grid for all stats in a single row (4 columns)
         cards_frame.grid_columnconfigure(0, weight=1)
         cards_frame.grid_columnconfigure(1, weight=1)
         cards_frame.grid_columnconfigure(2, weight=1)
         cards_frame.grid_columnconfigure(3, weight=1)
-        cards_frame.grid_columnconfigure(4, weight=1)
 
         self._stat_vars = {}
 
@@ -146,16 +145,6 @@ class DashboardView(ctk.CTkFrame):
                 "↩️",
                 lambda: self._go(
                     "movements", lambda v: v.set_type_filter("devolucion")
-                ),
-            ),
-            (
-                "asignacion_count",
-                "Asignaciones",
-                AZUL_CIELO,
-                HOVER_MOV_ASIG,
-                "📋",
-                lambda: self._go(
-                    "movements", lambda v: v.set_type_filter("asignacion")
                 ),
             ),
         ]
@@ -226,7 +215,7 @@ class DashboardView(ctk.CTkFrame):
         # Subheader with count or last update info
         self.movements_subheader = ctk.CTkLabel(
             movements_header,
-            text="Últimos 50 movimientos",
+            text="Últimos 10 movimientos",
             font=ctk.CTkFont(size=14),
             text_color=AZUL_NOCHE,
         )
@@ -499,7 +488,6 @@ class DashboardView(ctk.CTkFrame):
             "entrada_count": "entrada",
             "salida_count": "salida",
             "devolucion_count": "devolucion",
-            "asignacion_count": "asignacion",
         }
         counts = {**product_counts, **movement_counts}
         self._recent_movements = [dict(m) for m in movements]

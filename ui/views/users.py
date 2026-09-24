@@ -1,7 +1,14 @@
 import customtkinter as ctk
-from tkinter import messagebox
 from ui.colors import *
-from ui.widgets import make_table, clear_tree, setup_treeview_style
+from ui.widgets import (
+    make_table,
+    clear_tree,
+    setup_treeview_style,
+    BaseDialog,
+    show_centered,
+    MessageDialog,
+    ConfirmDialog,
+)
 from database.repository import get_all_users, create_user, update_user, delete_user
 from core.auth import hash_password
 
@@ -15,6 +22,7 @@ class UsersView(ctk.CTkFrame):
         self.grid_columnconfigure(0, weight=1)
         self._build()
         self.refresh()
+
 
     def _build(self):
         hdr = ctk.CTkFrame(self, fg_color=BLANCO_CALIDO)
@@ -78,7 +86,7 @@ class UsersView(ctk.CTkFrame):
     def _selected(self):
         sel = self.tree.focus()
         if not sel:
-            messagebox.showwarning("Aviso", "Selecciona un usuario.")
+            MessageDialog(self, "Aviso", "Selecciona un usuario.")
         return sel or None
 
     def _add_dialog(self):
@@ -117,14 +125,23 @@ class UsersView(ctk.CTkFrame):
         if not iid:
             return
         if int(iid) == self.current_user["id"]:
-            messagebox.showwarning("Aviso", "No puedes eliminarte a ti mismo.")
+            MessageDialog(self, "Aviso", "No puedes eliminarte a ti mismo.")
             return
-        if messagebox.askyesno("Confirmar", "¿Eliminar este usuario?"):
+        dlg = ConfirmDialog(
+            self, "Eliminar usuario", "¿Eliminar este usuario?", is_danger=True
+        )
+        self.wait_window(dlg)
+        if not dlg.result:
+            return
+        try:
             delete_user(int(iid))
-            self.refresh()
+        except Exception as e:
+            MessageDialog(self, "Error", str(e), is_error=True)
+            return
+        self.refresh()
 
 
-class _UserDialog(ctk.CTkToplevel):
+class _UserDialog(BaseDialog):
     ROLES = ["admin", "supervisor"]
 
     def __init__(self, parent, title, on_save, initial=None, edit_mode=False):
@@ -259,35 +276,42 @@ class _UserDialog(ctk.CTkToplevel):
             height=45,
             command=self.destroy,
         ).pack(side="left", expand=True, padx=5)
+        show_centered(self)
 
     def _save(self):
         import re
 
         username = self.user_e.get().strip()
         if not username:
-            messagebox.showwarning("Aviso", "El usuario es obligatorio.", parent=self)
+            MessageDialog(self, "Aviso", "El usuario es obligatorio.")
             return
         if not re.match(r"^[a-zA-Z0-9_]{3,20}$", username):
-            messagebox.showwarning(
-                "Aviso",
+            MessageDialog(
+                self, "Aviso",
                 "Usuario inválido (3-20 caracteres, letras, números y _).",
-                parent=self,
             )
             return
 
         password = self.pass_e.get()
         if not self.edit_mode and not password:
-            messagebox.showwarning(
-                "Aviso", "La contraseña es obligatoria.", parent=self
-            )
+            MessageDialog(self, "Aviso", "La contraseña es obligatoria.")
             return
-        if password and len(password) < 4:
-            messagebox.showwarning(
-                "Aviso", "La contraseña debe tener al menos 4 caracteres.", parent=self
+        if password and len(password) < self.MIN_LEN:
+            MessageDialog(
+                self, "Aviso",
+                f"La contraseña debe tener al menos {self.MIN_LEN} caracteres.",
             )
             return
 
-        self.on_save(
-            {"username": username, "password": password, "role": self.role_opt.get()}
-        )
+        try:
+            self.on_save(
+                {"username": username, "password": password,
+                 "role": self.role_opt.get()}
+            )
+        except Exception as e:
+            msg = str(e)
+            if "username" in msg.lower() or "unique" in msg.lower():
+                msg = "Ya existe un usuario con ese nombre."
+            MessageDialog(self, "Error", msg, is_error=True)
+            return
         self.destroy()

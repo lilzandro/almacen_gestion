@@ -1,4 +1,5 @@
 import tkinter as tk
+from tkinter import filedialog
 import customtkinter as ctk
 from ui.colors import (
     AZUL_NOCHE,
@@ -9,7 +10,6 @@ from ui.colors import (
     AMARILLO_AMBAR,
     NARANJA_INTENSO,
     GRIS_AZULADO,
-    NARANJA_SELECCION,
     HOVER_CERULEO,
     HOVER_MARINO,
     HOVER_AMBAR,
@@ -29,7 +29,6 @@ from ui.colors import (
     STOCK_AGOTADO_BG,
     STOCK_AGOTADO_FG,
     BLANCO,
-    FONDO_SCROLL,
     FONDO_ROW_PAR,
     FONDO_ROW_IMPAR,
     FONDO_EXPANDIDO,
@@ -41,17 +40,13 @@ from ui.colors import (
     SELECCION_BG,
     HOVER_FILA_BG,
     CHEVRON_HOVER,
-    FILTRO_TODOS_FG,
-    FILTRO_TODOS_HOVER,
-    FILTRO_DISP_FG,
-    FILTRO_DISP_HOVER,
-    FILTRO_NO_DISP_FG,
-    FILTRO_NO_DISP_HOVER,
 )
 from ui.widgets import (
+    BaseDialog,
     center_dialog,
     MessageDialog,
     ConfirmDialog,
+    show_centered,
 )
 from database.repository import (
     get_products_grouped,
@@ -70,20 +65,18 @@ from database.repository import (
     create_movement,
     bulk_create_products,
 )
+from core.export import export_inventory
 from ventanaejemplo.theme import (
     make_fonts,
     BG as V_BG,
-    BG_2,
     WHITE as V_WHITE,
     NAVY as V_NAVY,
     NAVY_2,
     BLUE as V_BLUE,
     BLUE_D,
-    BLUE_SOFT,
     ORANGE as V_ORANGE,
     ORANGE_D,
     ORANGE_SOFT,
-    INK,
     INK_2,
     INK_3,
     LINE,
@@ -91,7 +84,6 @@ from ventanaejemplo.theme import (
     RADIUS_BTN,
     RADIUS_FIELD,
     BTN_H,
-    FIELD_H,
 )
 from ventanaejemplo.data import (
     CATEGORIAS,
@@ -104,8 +96,6 @@ from ventanaejemplo.data import (
 from ventanaejemplo.widgets import (
     LabeledEntry,
     LabeledSelect,
-    ChipGroup,
-    SegSingle,
     InventoryToggle,
     SerialTable,
     section_header,
@@ -316,6 +306,21 @@ class ProductsView(ctk.CTkFrame):
             border_color=AZUL_CIELO,
         ).pack(side="right")
 
+        ctk.CTkButton(
+            action_section,
+            text="↓  Exportar PDF",
+            height=38,
+            width=150,
+            corner_radius=8,
+            command=self._export_pdf,
+            fg_color="transparent",
+            hover_color=HOVER_MARINO,
+            text_color=AZUL_CIELO,
+            font=ctk.CTkFont(size=15, weight="bold"),
+            border_width=1,
+            border_color=AZUL_CIELO,
+        ).pack(side="right", padx=(0, 8))
+
         if self.app and getattr(self.app, "scan_url", None):
             ctk.CTkButton(
                 action_section,
@@ -446,6 +451,48 @@ class ProductsView(ctk.CTkFrame):
                     font=ctk.CTkFont(size=16, weight="normal"),
                 )
 
+    def _warehouse_name(self):
+        if not self.app:
+            return ""
+        for w in getattr(self.app, "_warehouses", []) or []:
+            if w["id"] == self.app.current_warehouse_id:
+                return w["name"]
+        return ""
+
+    def _export_pdf(self):
+        q = self._search.get() if hasattr(self, "_search") else ""
+        status = (
+            self._status_filter.get() if hasattr(self, "_status_filter") else "todos"
+        )
+        wh_id = self.app.current_warehouse_id if self.app else None
+        try:
+            rows = get_products_grouped(
+                search=q, status_filter=status, warehouse_id=wh_id
+            )
+        except Exception as e:
+            MessageDialog(self, "Error", f"No se pudo leer el inventario:\n{e}",
+                          is_error=True)
+            return
+        if not rows:
+            MessageDialog(self, "Aviso",
+                          "No hay modelos para exportar con el filtro actual.")
+            return
+        path = filedialog.asksaveasfilename(
+            defaultextension=".pdf",
+            filetypes=[("PDF", "*.pdf")],
+            initialfile="inventario.pdf",
+        )
+        if not path:
+            return
+        try:
+            export_inventory(path, products=rows,
+                             warehouse_name=self._warehouse_name())
+        except Exception as e:
+            MessageDialog(self, "Error", f"No se pudo generar el PDF:\n{e}",
+                          is_error=True)
+            return
+        MessageDialog(self, "Éxito", f"Reporte PDF generado en:\n{path}")
+
     def refresh(self, force=False):
         import time
 
@@ -475,9 +522,15 @@ class ProductsView(ctk.CTkFrame):
         self._expanded.clear()
         self._selected_widget = None
 
-        groups = get_products_grouped(
-            search=q, status_filter=status, warehouse_id=wh_id
-        )
+        try:
+            groups = get_products_grouped(
+                search=q, status_filter=status, warehouse_id=wh_id
+            )
+        except Exception as e:
+            self._last_refresh = 0.0
+            MessageDialog(self, "Error", f"No se pudieron cargar los productos:\n{e}",
+                          is_error=True)
+            return
         if not groups:
             msg = "No hay productos que mostrar.\nAgrega productos usando el botón ⊕ Nuevo Producto."
             if q.strip() or self._status_filter.get() != "todos":
@@ -517,8 +570,12 @@ class ProductsView(ctk.CTkFrame):
 
         if group_row.is_open:
             # Cancelar apertura pendiente anterior
-            if hasattr(self, "_open_after_id") and self._open_after_id:
-                self.after_cancel(self._open_after_id)
+            if getattr(self, "_open_after_id", None):
+                try:
+                    self.after_cancel(self._open_after_id)
+                except Exception:
+                    pass
+                self._open_after_id = None
             # Cerrar otros grupos abiertos (rápido, solo destrucción)
             for key in list(self._expanded.keys()):
                 if key != group_key:
@@ -590,7 +647,12 @@ class ProductsView(ctk.CTkFrame):
         ).pack(side="right", fill="y")
 
         is_admin = self.current_user["role"] == "admin"
-        units = get_units_by_model(g["name"], g["brand"], wh_id)
+        try:
+            units = get_units_by_model(g["name"], g["brand"], wh_id)
+        except Exception as e:
+            MessageDialog(self, "Error",
+                          f"No se pudieron cargar las unidades:\n{e}", is_error=True)
+            return
         for i, u in enumerate(units):
             child = _ChildRow(
                 container,
@@ -627,20 +689,29 @@ class ProductsView(ctk.CTkFrame):
 
     def _edit_group(self, group_data):
         wh_id = self.app.current_warehouse_id if self.app else None
+        is_admin = self.current_user.get("role") == "admin"
 
         def _on_save(d):
-            update_product_group(
-                group_data["name"],
-                group_data["brand"],
-                d["name"],
-                d["brand"],
-                d["supplier_id"],
-                user_id=self.current_user["id"],
-                warehouse_id=wh_id,
-            )
+            try:
+                update_product_group(
+                    group_data["name"],
+                    group_data["brand"],
+                    d["name"],
+                    d["brand"],
+                    d["supplier_id"],
+                    user_id=self.current_user["id"],
+                    warehouse_id=wh_id,
+                )
+            except Exception as e:
+                MessageDialog(self, "Error", f"No se pudo actualizar el grupo:\n{e}",
+                              is_error=True)
+                return
             self.refresh(force=True)
 
         def _on_delete():
+            if not is_admin:
+                MessageDialog(self, "Aviso", "Solo un administrador puede eliminar grupos.")
+                return
             try:
                 elim, _archiv = delete_product_group(
                     group_data["name"],
@@ -668,7 +739,7 @@ class ProductsView(ctk.CTkFrame):
             group_data,
             on_save=_on_save,
             on_add_more=self._do_bulk_add,
-            on_delete=_on_delete,
+            on_delete=_on_delete if is_admin else None,
         )
 
     def _scan_barcode(self):
@@ -694,7 +765,12 @@ class ProductsView(ctk.CTkFrame):
     def _route_scanned_code(self, code):
         """Escanear un código: si está registrado lo muestra para localizarlo;
         si no, ofrece registrarlo."""
-        row, matched = lookup_product_by_code(code)
+        try:
+            row, matched = lookup_product_by_code(code)
+        except Exception as e:
+            MessageDialog(self, "Error",
+                          f"No se pudo buscar el código:\n{e}", is_error=True)
+            return
         _ScanResultDialog(
             self,
             code=matched or (code or "").strip(),
@@ -794,11 +870,16 @@ class ProductsView(ctk.CTkFrame):
             }
             for item in items
         ]
-        ok, duplicados = bulk_create_products(
-            payload,
-            user_id=self.current_user["id"],
-            warehouse_id=wh_id,
-        )
+        try:
+            ok, duplicados = bulk_create_products(
+                payload,
+                user_id=self.current_user["id"],
+                warehouse_id=wh_id,
+            )
+        except Exception as e:
+            MessageDialog(self, "Error", f"No se pudo registrar el lote:\n{e}",
+                          is_error=True)
+            return
         self.refresh(force=True)
         msg = f"{ok} equipo(s) registrado(s)."
         if duplicados:
@@ -809,7 +890,12 @@ class ProductsView(ctk.CTkFrame):
         iid = self._selected_unit()
         if not iid:
             return
-        prod = get_product_by_id(iid)
+        try:
+            prod = get_product_by_id(iid)
+        except Exception as e:
+            MessageDialog(self, "Error", f"No se pudo cargar la unidad:\n{e}",
+                          is_error=True)
+            return
         if not prod:
             return
 
@@ -837,6 +923,7 @@ class ProductsView(ctk.CTkFrame):
                     quantity=d.get("quantity"),
                 )
                 self.refresh(force=True)
+                return True
             except sqlite3.IntegrityError:
                 MessageDialog(
                     self,
@@ -844,6 +931,7 @@ class ProductsView(ctk.CTkFrame):
                     "El código de barras ya existe en otro producto.",
                     is_error=True,
                 )
+                return False
             except Exception as e:
                 MessageDialog(
                     self,
@@ -851,6 +939,7 @@ class ProductsView(ctk.CTkFrame):
                     f"No se pudo guardar el producto.\n{e}",
                     is_error=True,
                 )
+                return False
 
         _ProductDialog(
             self,
@@ -875,7 +964,12 @@ class ProductsView(ctk.CTkFrame):
             return
 
         product_id = int(iid)
-        prod = get_product_by_id(iid)
+        try:
+            prod = get_product_by_id(iid)
+        except Exception as e:
+            MessageDialog(self, "Error", f"No se pudo cargar la unidad:\n{e}",
+                          is_error=True)
+            return
         product_name = prod["name"] if prod else str(iid)
 
         wh_id = self.app.current_warehouse_id if self.app else None
@@ -1324,7 +1418,7 @@ class _GroupRow(ctk.CTkFrame):
 # ── Diálogos ─────────────────────────────────────────────────────────────────
 
 
-class _GroupEditDialog(ctk.CTkToplevel):
+class _GroupEditDialog(BaseDialog):
     def __init__(self, parent, group_data, on_save, on_add_more=None, on_delete=None):
         super().__init__(parent)
         self.title("Editar Grupo")
@@ -1470,7 +1564,7 @@ class _GroupEditDialog(ctk.CTkToplevel):
                 command=self._delete_group,
             ).pack(fill="x")
 
-        center_dialog(self)
+        show_centered(self)
         self.protocol("WM_DELETE_WINDOW", self._safe_close)
         self.after(50, self.grab_set)
 
@@ -1554,7 +1648,7 @@ class _GroupEditDialog(ctk.CTkToplevel):
         self.on_save({"name": name, "brand": brand, "supplier_id": supplier_id})
 
 
-class _BarcodeScanDialog(ctk.CTkToplevel):
+class _BarcodeScanDialog(BaseDialog):
     def __init__(self, parent, on_scan):
         super().__init__(parent)
         self.title("Escanear Código de Barras")
@@ -1613,7 +1707,7 @@ class _BarcodeScanDialog(ctk.CTkToplevel):
         ).pack(pady=10)
 
         self.barcode_entry.bind("<Return>", lambda e: self._on_accept())
-        center_dialog(self)
+        show_centered(self)
         self.protocol("WM_DELETE_WINDOW", self._safe_close)
         self.after(50, self.grab_set)
 
@@ -1648,7 +1742,7 @@ class _BarcodeScanDialog(ctk.CTkToplevel):
             self.on_scan(barcode)
 
 
-class _ScanRowDialog(ctk.CTkToplevel):
+class _ScanRowDialog(BaseDialog):
     """Diálogo de escaneo continuo: cada código agregado añade una fila."""
 
     def __init__(self, parent, on_code):
@@ -1723,7 +1817,7 @@ class _ScanRowDialog(ctk.CTkToplevel):
             command=self._close,
         ).pack(side="left", padx=6)
 
-        center_dialog(self)
+        show_centered(self)
         self.protocol("WM_DELETE_WINDOW", self._close)
         self.after(50, self.grab_set)
 
@@ -1756,7 +1850,7 @@ class _ScanRowDialog(ctk.CTkToplevel):
         self.destroy()
 
 
-class _PhoneScanHelpDialog(ctk.CTkToplevel):
+class _PhoneScanHelpDialog(BaseDialog):
     """Guía simple para escanear con el teléfono (QR + pasos)."""
 
     def __init__(self, parent, url, on_close=None):
@@ -1840,7 +1934,7 @@ class _PhoneScanHelpDialog(ctk.CTkToplevel):
             command=self._done,
         ).pack(side="left", padx=6)
 
-        center_dialog(self)
+        show_centered(self)
         self.protocol("WM_DELETE_WINDOW", self._done)
         self.after(50, self.grab_set)
 
@@ -1861,7 +1955,7 @@ class _PhoneScanHelpDialog(ctk.CTkToplevel):
             self.on_close()
 
 
-class _ScanResultDialog(ctk.CTkToplevel):
+class _ScanResultDialog(BaseDialog):
     """Resultado de escanear un código: buscar si existe o registrar."""
 
     def __init__(self, parent, code, row=None, on_locate=None):
@@ -1899,7 +1993,7 @@ class _ScanResultDialog(ctk.CTkToplevel):
         else:
             self._build_notfound()
 
-        center_dialog(self)
+        show_centered(self)
         self.protocol("WM_DELETE_WINDOW", self._close)
         self.after(50, self.grab_set)
 
@@ -2184,7 +2278,7 @@ class _ScanResultDialog(ctk.CTkToplevel):
         self.destroy()
 
 
-class _RegistrarProductoDialog(ctk.CTkToplevel):
+class _RegistrarProductoDialog(BaseDialog):
     def __init__(self, parent, on_save, prefill=None, products_view=None):
         super().__init__(parent)
         self.title("Registrar Producto")
@@ -2211,8 +2305,37 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
 
         self._build_header()
         self._build_footer()
-        self._build_body()
+        self.protocol("WM_DELETE_WINDOW", self._safe_close)
 
+        show_centered(self)
+        self.after(50, self.grab_set)
+        self.after(20, self._build_deferred)
+
+    def _build_deferred(self):
+        if not self.winfo_exists():
+            return
+        self._body = ctk.CTkScrollableFrame(self, fg_color=V_BG)
+        self._body.pack(fill="both", expand=True)
+        self._body.columnconfigure(0, weight=1)
+        self.after(20, self._build_deferred_basica)
+
+    def _build_deferred_basica(self):
+        if not self.winfo_exists():
+            return
+        self._build_seccion_basica(self._body)
+        self._divider(self._body)
+        self.after(20, self._build_deferred_existencias)
+
+    def _build_deferred_existencias(self):
+        if not self.winfo_exists():
+            return
+        self._build_seccion_existencias(self._body)
+        self.after(20, self._build_deferred_apply)
+
+    def _build_deferred_apply(self):
+        if not self.winfo_exists():
+            return
+        prefill = self._prefill
         if prefill:
             if prefill.get("name"):
                 self.in_nombre.set(prefill["name"])
@@ -2249,10 +2372,6 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
                 self.on_categoria_change(CATEGORIA_NOMBRES[0])
         else:
             self.on_categoria_change(CATEGORIA_NOMBRES[0])
-        self.protocol("WM_DELETE_WINDOW", self._safe_close)
-        self.after(50, self._rebind_mousewheel)
-        self.after(50, self.grab_set)
-
         scanned = (prefill or {}).get("barcode")
         if scanned and self.serial_table is not None and self.serial_table.rows:
             code = str(scanned).strip()
@@ -2261,6 +2380,7 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
                 bc_e.delete(0, "end")
                 bc_e.insert(0, code)
                 self.serial_table.rows[0]["serial"].focus()
+        self._rebind_mousewheel()
 
     def _safe_close(self):
         try:
@@ -2731,20 +2851,6 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
             else None
         )
 
-        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        print("📦 DATOS DEL PRODUCTO A REGISTRAR")
-        print(f"  Nombre:      {nombre}")
-        print(f"  Código barr: {data.get('barcode', '—')}")
-        print(f"  Categoría:   {data.get('categoria', '—')}")
-        print(f"  Marca:       {marca or '—'}")
-        print(f"  Modelo:      {data.get('modelo', '—')}")
-        print(f"  Unidad:      {data.get('unidad', 'und')}")
-        print(f"  Proveedor:   {proveedor_text}")
-        print(f"  Control:     {data.get('control', '—')}")
-        print(
-            f"  Modo:        {'SERIE (serial/MAC)' if self.control_mode == CTRL_SERIE else 'CANTIDAD (stock)'}"
-        )
-
         if self.control_mode == CTRL_SERIE and self.serial_table:
             items = []
             seen = set()
@@ -2792,12 +2898,6 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
                 "supplier_id": supplier_id,
                 "unit": data.get("unidad", "und"),
             }
-            print(f"  Equipos:     {len(items)} fila(s)")
-            for i, it in enumerate(items, 1):
-                print(
-                    f"    {i}. serial={it['serial'] or '—'}  mac={it['mac'] or '—'}  bc={it['barcode'] or '—'}"
-                )
-            print(f"  → Llamando on_save (bulk_create)…")
             self.destroy()
             self.on_save(common, items)
         else:
@@ -2807,23 +2907,9 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
                 stock_val = int(data.get("stock") or 0)
             except (ValueError, TypeError):
                 stock_val = 0
-            # Debug: contar si ya existen productos con mismo nombre+marca
-            from database.connection import get_connection as _get_conn
-
-            _conn = _get_conn()
-            try:
-                _existing = _conn.execute(
-                    "SELECT COUNT(*), COALESCE(SUM(quantity),0) FROM products WHERE name=? AND COALESCE(brand,'')=?",
-                    (nombre, marca),
-                ).fetchone()
-                print(
-                    f"  Ya existen: {_existing[0]} fila(s) con quantity total={_existing[1]}"
-                )
-            finally:
-                _conn.close()
-            print(f"  Serial:      {data.get('serial', '—') or '—'}")
-            print(f"  Stock:       {stock_val}")
-            print(f"  → Creando producto en DB…")
+            if stock_val < 0:
+                MessageDialog(self, "Aviso", "El stock no puede ser negativo.")
+                return
             try:
                 pid = create_product(
                     nombre,
@@ -2837,19 +2923,12 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
                     warehouse_id=wh_id,
                 )
             except sqlite3.IntegrityError as e:
-                if "barcode" in str(e):
-                    print(f"  ❌ ERROR: código de barras duplicado")
-                    MessageDialog(
-                        self,
-                        "Error",
-                        "El código de barras ya existe en otro producto.",
-                        is_error=True,
-                    )
-                else:
-                    print(f"  ❌ ERROR: {e}")
-                    MessageDialog(
-                        self, "Error", f"Error al guardar: {e}", is_error=True
-                    )
+                msg = (
+                    "El código de barras ya existe en otro producto."
+                    if "barcode" in str(e)
+                    else f"Error al guardar: {e}"
+                )
+                MessageDialog(self, "Error", msg, is_error=True)
                 return
             if stock_val > 0:
                 try:
@@ -2863,7 +2942,6 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
                         warehouse_id=wh_id,
                     )
                 except Exception as e:
-                    print(f"  ❌ ERROR movimiento: {e}")
                     MessageDialog(
                         self,
                         "Error",
@@ -2871,8 +2949,6 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
                         is_error=True,
                     )
                     return
-            print(f"  ✅ Producto ID {pid} creado con stock={stock_val}")
-            print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
             self.destroy()
             self.products_view.refresh(force=True)
             MessageDialog(
@@ -2882,7 +2958,7 @@ class _RegistrarProductoDialog(ctk.CTkToplevel):
             )
 
 
-class _ProductDialog(ctk.CTkToplevel):
+class _ProductDialog(BaseDialog):
     def __init__(self, parent, title, on_save, initial=None, prefill=None):
         super().__init__(parent)
         self.title(title)
@@ -2903,10 +2979,11 @@ class _ProductDialog(ctk.CTkToplevel):
 
         self.geometry("500x550")
         self.minsize(420, 480)
-        self._build_edit_mode(sup_names, d)
 
         self.protocol("WM_DELETE_WINDOW", self._safe_close)
+        show_centered(self)
         self.after(50, self.grab_set)
+        self.after(20, lambda: self.winfo_exists() and self._build_edit_mode(sup_names, d))
 
     def _safe_close(self):
         try:
@@ -3087,5 +3164,7 @@ class _ProductDialog(ctk.CTkToplevel):
                 return
             payload["quantity"] = quantity
 
-        self.on_save(payload)
+        result = self.on_save(payload)
+        if result is False:
+            return
         self.destroy()

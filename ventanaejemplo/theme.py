@@ -8,6 +8,8 @@ Los colores son las mismas variables CSS del prototipo:
   --navy, --blue, --orange, --ink, --line, --bg, --ok, etc.
 """
 
+from functools import lru_cache
+
 # ── Paleta (idéntica al CSS del prototipo) ───────────────────────────────────
 NAVY        = "#0c2f54"   # cabecera (azul marino de marca)
 NAVY_2      = "#0a2542"   # degradado inferior de cabecera
@@ -58,6 +60,9 @@ def make_fonts():
     Construye el set de fuentes. DEBE llamarse DESPUÉS de crear la ventana
     raíz (CTk()), porque tkinter.font necesita un intérprete Tk activo.
     Devuelve un dict listo para pasar a los widgets.
+
+    El resultado se cachea: crear las fuentes y resolver las familias del
+    sistema tiene costo y el set es constante durante toda la sesión.
     """
     import customtkinter as ctk
     sans = _pick(SANS_STACK)
@@ -77,3 +82,6 @@ def make_fonts():
         "chip":      ctk.CTkFont(family=sans, size=12),
         "_sans": sans, "_mono": mono,
     }
+
+
+make_fonts = lru_cache(maxsize=1)(make_fonts)

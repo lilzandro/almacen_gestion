@@ -1,6 +1,7 @@
 import customtkinter as ctk
 from core.auth import login, change_password
 from ui.colors import *
+from ui.widgets import BaseDialog, show_centered
 
 try:
     from PIL import Image
@@ -121,7 +122,7 @@ class LoginFrame(ctk.CTkFrame):
             self.pass_entry.delete(0, "end")
 
 
-class _ForceChangePasswordDialog(ctk.CTkToplevel):
+class _ForceChangePasswordDialog(BaseDialog):
     """Diálogo obligatorio al primer login — bloquea acceso hasta cambiar contraseña."""
 
     MIN_LEN = 8
@@ -168,6 +169,7 @@ class _ForceChangePasswordDialog(ctk.CTkToplevel):
 
         self._new_e.focus()
         self._confirm_e.bind("<Return>", lambda e: self._save())
+        show_centered(self)
 
     def _save(self):
         new_pw = self._new_e.get()

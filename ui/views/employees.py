@@ -1,7 +1,14 @@
 import customtkinter as ctk
-from tkinter import messagebox
 from ui.colors import *
-from ui.widgets import make_table, clear_tree, setup_treeview_style
+from ui.widgets import (
+    make_table,
+    clear_tree,
+    setup_treeview_style,
+    BaseDialog,
+    show_centered,
+    MessageDialog,
+    ConfirmDialog,
+)
 from database.repository import (
     get_all_employees,
     create_employee,
@@ -29,15 +36,16 @@ class EmployeesView(ctk.CTkFrame):
             font=ctk.CTkFont(size=26, weight="bold"),
             text_color=AZUL_NOCHE,
         ).pack(side="left")
-        ctk.CTkButton(
-            hdr,
-            text="+ Agregar Empleado",
-            height=36,
-            command=self._add_dialog,
-            fg_color=NARANJA_SELECCION,
-            hover_color=HOVER_NARANJA_SEL,
-            text_color="white",
-        ).pack(side="right")
+        if self.current_user.get("role") == "admin":
+            ctk.CTkButton(
+                hdr,
+                text="+ Agregar Empleado",
+                height=36,
+                command=self._add_dialog,
+                fg_color=NARANJA_SELECCION,
+                hover_color=HOVER_NARANJA_SEL,
+                text_color="white",
+            ).pack(side="right")
 
         sf = ctk.CTkFrame(
             self, fg_color=BLANCO, border_width=1, border_color=AZUL_MARINO
@@ -77,26 +85,27 @@ class EmployeesView(ctk.CTkFrame):
 
         af = ctk.CTkFrame(self, fg_color=BLANCO_CALIDO)
         af.grid(row=3, column=0, sticky="ew", padx=20, pady=(4, 10))
-        ctk.CTkButton(
-            af,
-            text="✏️ Editar",
-            width=120,
-            height=34,
-            command=self._edit_dialog,
-            fg_color=AZUL_MARINO,
-            hover_color=SIDEBAR_HOVER,
-            text_color="white",
-        ).pack(side="left", padx=4)
-        ctk.CTkButton(
-            af,
-            text="🗑️ Eliminar",
-            width=120,
-            height=34,
-            fg_color=AZUL_MARINO,  # Secundario
-            hover_color=SIDEBAR_HOVER,
-            text_color="white",
-            command=self._delete,
-        ).pack(side="left", padx=4)
+        if self.current_user.get("role") == "admin":
+            ctk.CTkButton(
+                af,
+                text="✏️ Editar",
+                width=120,
+                height=34,
+                command=self._edit_dialog,
+                fg_color=AZUL_MARINO,
+                hover_color=SIDEBAR_HOVER,
+                text_color="white",
+            ).pack(side="left", padx=4)
+            ctk.CTkButton(
+                af,
+                text="🗑️ Eliminar",
+                width=120,
+                height=34,
+                fg_color=AZUL_MARINO,  # Secundario
+                hover_color=SIDEBAR_HOVER,
+                text_color="white",
+                command=self._delete,
+            ).pack(side="left", padx=4)
 
     def refresh(self):
         q = self._search.get().lower() if hasattr(self, "_search") else ""
@@ -119,7 +128,7 @@ class EmployeesView(ctk.CTkFrame):
     def _selected(self):
         sel = self.tree.focus()
         if not sel:
-            messagebox.showwarning("Aviso", "Selecciona un empleado.")
+            MessageDialog(self, "Aviso", "Selecciona un empleado.")
         return sel or None
 
     def _add_dialog(self):
@@ -151,12 +160,21 @@ class EmployeesView(ctk.CTkFrame):
         iid = self._selected()
         if not iid:
             return
-        if messagebox.askyesno("Confirmar", "¿Eliminar este empleado?"):
+        dlg = ConfirmDialog(
+            self, "Eliminar empleado", "¿Eliminar este empleado?", is_danger=True
+        )
+        self.wait_window(dlg)
+        if not dlg.result:
+            return
+        try:
             delete_employee(int(iid))
-            self.refresh()
+        except Exception as e:
+            MessageDialog(self, "Error", str(e), is_error=True)
+            return
+        self.refresh()
 
 
-class _EmpDialog(ctk.CTkToplevel):
+class _EmpDialog(BaseDialog):
     def __init__(self, parent, title, on_save, initial=None):
         super().__init__(parent)
         self.title(title)
@@ -288,42 +306,45 @@ class _EmpDialog(ctk.CTkToplevel):
             height=45,
             command=self.destroy,
         ).pack(side="left", expand=True, padx=5)
+        show_centered(self)
+
 
     def _save(self):
         import re
 
         name = self.name_e.get().strip()
         if not name:
-            messagebox.showwarning("Aviso", "El nombre es obligatorio.", parent=self)
+            MessageDialog(self, "Aviso", "El nombre es obligatorio.")
             return
         if not re.match(r"^[a-zA-Z\sáéíóúÁÉÍÓÚÑñ]+$", name):
-            messagebox.showwarning(
-                "Aviso", "El nombre solo puede tener letras.", parent=self
-            )
+            MessageDialog(self, "Aviso", "El nombre solo puede tener letras.")
             return
 
         cedula = self.cedula_e.get().strip()
         if not cedula:
-            messagebox.showwarning("Aviso", "La cédula es obligatoria.", parent=self)
+            MessageDialog(self, "Aviso", "La cédula es obligatoria.")
             return
         if not re.match(r"^[0-9]{6,10}$", cedula):
-            messagebox.showwarning(
-                "Aviso", "Cédula inválida (6-10 dígitos).", parent=self
-            )
+            MessageDialog(self, "Aviso", "Cédula inválida (6-10 dígitos).")
             return
 
         cargo = self.cargo_e.get().strip()
         if cargo and not re.match(r"^[a-zA-Z0-9\s\-_.,áéíóúÁÉÍÓÚÑñ]+$", cargo):
-            messagebox.showwarning(
-                "Aviso", "Cargo con caracteres inválidos.", parent=self
-            )
+            MessageDialog(self, "Aviso", "Cargo con caracteres inválidos.")
             return
 
-        self.on_save(
-            {
-                "name": name.upper(),
-                "cedula": cedula,
-                "cargo": cargo.upper(),
-            }
-        )
+        try:
+            self.on_save(
+                {
+                    "name": name.upper(),
+                    "cedula": cedula,
+                    "cargo": cargo.upper(),
+                }
+            )
+        except Exception as e:
+            msg = str(e)
+            if "cedula" in msg.lower() or "unique" in msg.lower():
+                msg = "Ya existe un empleado con esa cédula."
+            MessageDialog(self, "Error", msg, is_error=True)
+            return
         self.destroy()

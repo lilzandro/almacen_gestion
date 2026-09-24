@@ -1,119 +1,153 @@
-import openpyxl
-from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-import openpyxl.utils
-from database.repository import get_all_movements, get_all_products
+"""Generación de reportes PDF.
+
+La dependencia `reportlab` se importa de forma perezosa (dentro de `_build_pdf`)
+para que el resto de la app funcione aunque no esté instalada; en ese caso el
+export muestra un error claro en vez de romper la interfaz.
+"""
+from datetime import datetime
+
+from database.repository import get_movements_flat, get_products_grouped
+
+_TIPO_LABEL = {
+    "entrada": "Entrada",
+    "salida": "Salida",
+    "devolucion": "Devolución",
+    "asignacion": "Asignación",
+    "eliminacion": "Eliminación",
+    "eliminacion_grupo": "Eliminación grupo",
+    "modificacion": "Modificación",
+}
 
 
-def _header_style():
-    return {
-        "font": Font(bold=True, color="FFFFFF", size=11),
-        "fill": PatternFill("solid", fgColor="003366"),
-        "alignment": Alignment(horizontal="center", vertical="center"),
-        "border": Border(
-            *[Side(style="thin")] * 0,
-            left=Side(style="thin"),
-            right=Side(style="thin"),
-            top=Side(style="thin"),
-            bottom=Side(style="thin"),
-        ),
-    }
+def _build_pdf(**kwargs):
+    """Importa el motor de PDF solo cuando se usa (reportlab es opcional)."""
+    try:
+        from core.pdf_export import build_pdf
+    except ImportError as e:
+        raise RuntimeError(
+            "Falta la dependencia 'reportlab'. "
+            "Instálala con:  pip install -r requirements.txt"
+        ) from e
+    return build_pdf(**kwargs)
 
 
-def _apply_headers(ws, headers, col_widths):
-    h = _header_style()
-    for col, (text, width) in enumerate(zip(headers, col_widths), 1):
-        cell = ws.cell(row=1, column=col, value=text)
-        cell.font = h["font"]
-        cell.fill = h["fill"]
-        cell.alignment = h["alignment"]
-        cell.border = h["border"]
-        ws.column_dimensions[openpyxl.utils.get_column_letter(col)].width = width
-    ws.row_dimensions[1].height = 24
-    ws.freeze_panes = "A2"
+def _fmt_ts(ts):
+    if not ts:
+        return "—"
+    try:
+        return datetime.strptime(str(ts)[:19], "%Y-%m-%d %H:%M:%S").strftime(
+            "%d/%m/%Y %H:%M"
+        )
+    except ValueError:
+        return str(ts)[:16]
 
 
-def _row_border():
-    s = Side(style="thin")
-    return Border(left=s, right=s, top=s, bottom=s)
+def _movement_product_label(r):
+    """Etiqueta de producto: lista los ítems si el movimiento es compuesto."""
+    names = r.get("item_names") or []
+    if len(names) > 1:
+        return ", ".join(names)
+    if names:
+        return names[0]
+    return r.get("product") or "—"
 
 
-def export_movements(filepath: str):
-    movements = get_all_movements(limit=10000)
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Movimientos"
-    alt = PatternFill("solid", fgColor="EEF2FF")
-    border = _row_border()
+def export_movements(
+    filepath,
+    movements=None,
+    *,
+    warehouse_name="",
+    filters_text="",
+    generated_by="",
+):
+    """Genera el reporte PDF de movimientos (respeta los filtros ya aplicados).
 
-    headers = [
-        "ID",
-        "Tipo",
-        "Fecha/Hora",
-        "Cantidad",
-        "Producto",
-        "Empleado",
-        "Registrado por",
-        "Notas",
-    ]
-    widths = [6, 12, 18, 8, 32, 22, 16, 28]
-    _apply_headers(ws, headers, widths)
-
-    for r, row in enumerate(movements, 2):
-        data = [
-            row["id"],
-            row["type"],
-            row["timestamp"],
-            row["quantity"],
-            row["product"],
-            row["employee"],
-            row["registered_by"],
-            row["notes"],
-        ]
-        for c, val in enumerate(data, 1):
-            cell = ws.cell(row=r, column=c, value=val)
-            cell.border = border
-            if r % 2 == 0:
-                cell.fill = alt
-    wb.save(filepath)
-
-
-def export_inventory(filepath: str):
-    products = get_all_products()
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Inventario"
-    border = _row_border()
-    status_colors = {
-        "disponible": "C6EFCE",
-        "no disponible": "FFEB9C",
-        "inactivo": "FFC7CE",
-    }
+    Un movimiento agrupado (varios productos en `movement_items`) se muestra en
+    una sola fila: la cantidad como resumen por unidad (p. ej. "330 m · 100 und")
+    y la columna Producto listando los productos involucrados.
+    """
+    if movements is None:
+        movements = get_movements_flat(limit=10000)
+    movements = [r if isinstance(r, dict) else dict(r) for r in movements]
 
     headers = [
-        "ID",
-        "Nombre",
-        "Código de Barras",
-        "Cantidad",
-        "Estado",
-        "Proveedor",
-        "Ubicación",
+        "ID", "Tipo", "Fecha/Hora", "Cant.", "Producto",
+        "Empleado", "Registrado por", "Notas",
     ]
-    widths = [6, 26, 20, 12, 16, 26, 16]
-    _apply_headers(ws, headers, widths)
-
-    for r, row in enumerate(products, 2):
-        data = [
-            row["id"],
-            row["name"],
-            row["barcode"],
-            row["quantity"],
-            row["status"],
-            row["supplier_name"],
-            row["location"],
+    widths = [26, 50, 74, 56, 163, 115, 80, 182]
+    rows = [
+        [
+            r["id"],
+            _TIPO_LABEL.get(str(r["type"]).lower(), r["type"]),
+            _fmt_ts(r["timestamp"]),
+            r.get("cant_display") or r["quantity"],
+            _movement_product_label(r),
+            r["employee"] or "—",
+            r["registered_by"] or "—",
+            r["notes"] or "",
         ]
-        for c, val in enumerate(data, 1):
-            cell = ws.cell(row=r, column=c, value=val)
-            cell.border = border
-            if c == 5 and row["status"] in status_colors:
-                cell.fill = PatternFill("solid", fgColor=status_colors[row["status"]])
-    wb.save(filepath)
+        for r in movements
+    ]
+
+    subtitle = [f"Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}"]
+    if generated_by:
+        subtitle[0] += f"   ·   Usuario: {generated_by}"
+    if warehouse_name:
+        subtitle.append(f"Almacén: {warehouse_name}")
+    subtitle.append(f"Filtros: {filters_text}" if filters_text else "Filtros: ninguno")
+
+    _build_pdf(
+        filepath=filepath,
+        title="Reporte de Movimientos",
+        subtitle=subtitle,
+        headers=headers,
+        col_widths=widths,
+        rows=rows,
+        total_label=f"Total: {len(rows)} movimiento(s).",
+        landscape_mode=True,
+    )
+
+
+def export_inventory(filepath, products=None, *, warehouse_name=""):
+    """Genera el reporte PDF del inventario agrupado por modelo/marca.
+
+    Una fila por (nombre, marca): cantidad de unidades y stock (disponible si el
+    modelo se controla por serial, total en caso contrario), igual que la vista.
+    """
+    if products is None:
+        products = get_products_grouped()
+
+    headers = ["Modelo / Equipo", "Marca", "Unidades", "Stock", "Proveedor"]
+    widths = [150, 90, 65, 90, 132]
+    rows = []
+    for raw in products:
+        g = raw if isinstance(raw, dict) else dict(raw)
+        unit = g.get("unit") or "und"
+        has_serial = bool(g.get("has_serial", 0))
+        stock = (
+            g.get("disponible_count", 0)
+            if unit == "und" and has_serial
+            else (g.get("total_quantity") or 0)
+        )
+        rows.append([
+            g["name"],
+            g.get("brand") or "—",
+            f"{g.get('unit_count', 0)} {unit}",
+            f"{stock} {unit}",
+            g.get("supplier_name") or "—",
+        ])
+
+    subtitle = [f"Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}"]
+    if warehouse_name:
+        subtitle.append(f"Almacén: {warehouse_name}")
+    subtitle.append(f"Modelos: {len(rows)}")
+
+    _build_pdf(
+        filepath=filepath,
+        title="Reporte de Inventario",
+        subtitle=subtitle,
+        headers=headers,
+        col_widths=widths,
+        rows=rows,
+        total_label=f"Total: {len(rows)} modelo(s).",
+    )
