@@ -80,7 +80,7 @@ Register in `App._get_view_class()` and add sidebar button in `Sidebar.__init__(
 - Windows: requires VcXsrv; `docker compose -f docker-compose.windows.yml up --build`
 - macOS: requires XQuartz; `xhost +localhost && docker compose -f docker-compose.macos.yml up --build`
 - DB persistida en `./data/inventory.db` (bind mount), sobrevive reinicios
-- Guías: `docs/GUIA_DOCKER_CLIENTE.md` (uso) y `docs/GUIA_DOCKER_SOPORTE.md` (técnica)
+- Guía: `docs/GUIA_WINDOWS.md` (instalación y uso en Windows, sin Docker)
 
 ## Constraints
 

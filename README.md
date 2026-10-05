@@ -57,8 +57,8 @@ python main.py
 Docker permite correr la app sin instalar Python ni dependencias en el host. La ventana gráfica se muestra en el escritorio del sistema operativo.
 
 **Guías completas:**
-- 👤 [Guía para el cliente](docs/GUIA_DOCKER_CLIENTE.md) — cómo abrir y usar el sistema paso a paso.
-- 🛠️ [Guía de soporte técnico](docs/GUIA_DOCKER_SOPORTE.md) — instalación, operación y resolución de problemas.
+- 🪟 [Guía de instalación en Windows (sin Docker)](docs/GUIA_WINDOWS.md) — instalación, uso, respaldos y problemas frecuentes.
+- 🐳 [Guía de instalación en Windows con Docker](docs/GUIA_WINDOWS_DOCKER.md) — Docker Desktop + VcXsrv, uso, respaldos y problemas frecuentes.
 
 ### Linux
 
@@ -134,8 +134,7 @@ scanner_inventory/
 │   ├── widgets.py          # Componentes reutilizables
 │   └── views/              # Una vista por módulo
 ├── docs/
-│   ├── GUIA_DOCKER_CLIENTE.md    # Guía de uso (cliente)
-│   └── GUIA_DOCKER_SOPORTE.md    # Guía técnica (soporte)
+│   └── GUIA_WINDOWS.md           # Guía de instalación y uso en Windows
 ├── tests/                  # Pruebas (pytest)
 ├── data/                   # Base de datos persistida (Docker)
 ├── img/                    # Logo y recursos
