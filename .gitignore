@@ -38,3 +38,7 @@ Thumbs.db
 
 # Certificados TLS generados en runtime
 core/certs/
+
+# Instrucciones locales de asistentes IA (no versionadas)
+CLAUDE.md
+AGENTS.md
