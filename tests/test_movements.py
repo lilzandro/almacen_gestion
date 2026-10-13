@@ -106,3 +106,50 @@ def test_no_editar_movimiento_compuesto(db, q):
     )
     with pytest.raises(ValueError):
         repo.update_movement(mid, "salida", None, 2, "x")
+
+
+def test_bulk_create_products_genera_un_solo_movimiento(db, q):
+    repo = db["repo"]
+    items = [
+        {"name": "Camara", "brand": "Hik", "serial": "C-1", "mac": "",
+         "supplier_id": None, "unit": "und"},
+        {"name": "Camara", "brand": "Hik", "serial": "C-2", "mac": "",
+         "supplier_id": None, "unit": "und"},
+        {"name": "Camara", "brand": "Hik", "serial": "C-3", "mac": "",
+         "supplier_id": None, "unit": "und"},
+    ]
+    ok, duplicados = repo.bulk_create_products(
+        items, user_id=db["user_id"], warehouse_id=db["wh_id"]
+    )
+    assert ok == 3
+    assert duplicados == []
+
+    movs = q(
+        "SELECT id, type, quantity, product_id FROM movements "
+        "WHERE type='entrada' AND notes LIKE 'Alta masiva%'"
+    )
+    assert len(movs) == 1
+    mid = movs[0]["id"]
+    assert movs[0]["product_id"] == 0
+    assert movs[0]["quantity"] == 3
+
+    n_items = q(
+        "SELECT COUNT(*) c FROM movement_items WHERE movement_id=?", (mid,)
+    )[0]["c"]
+    assert n_items == 3
+
+
+def test_bulk_create_products_todos_duplicados_no_crea_movimiento(db, q):
+    repo = db["repo"]
+    item = {
+        "name": "Router", "brand": "TPLink", "barcode": "BC-QTY",
+        "serial": "", "mac": "", "supplier_id": None, "unit": "und",
+    }
+    antes = q("SELECT COUNT(*) c FROM movements")[0]["c"]
+    ok, duplicados = repo.bulk_create_products(
+        [item], user_id=db["user_id"], warehouse_id=db["wh_id"]
+    )
+    assert ok == 0
+    assert duplicados
+    assert q("SELECT COUNT(*) c FROM movements")[0]["c"] == antes
+

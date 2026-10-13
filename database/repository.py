@@ -57,7 +57,10 @@ def get_all_warehouses():
 
 def bulk_create_products(items, user_id, warehouse_id=None):
     """
-    Inserta N productos + sus movimientos de entrada en UNA sola transacción.
+    Inserta N productos en UNA transacción y registra un ÚNICO movimiento de
+    entrada agrupado (misma convención que create_compound_movement): un
+    `movements` con product_id=0 y quantity=total, y una fila por unidad en
+    `movement_items`.
 
     items: lista de dicts con claves: name, brand, serial, mac, supplier_id, unit[, barcode]
     Retorna: (ok: int, duplicados: list[str])
@@ -65,6 +68,7 @@ def bulk_create_products(items, user_id, warehouse_id=None):
     conn = get_connection()
     ok = 0
     duplicados = []
+    created_items = []
     try:
         for item in items:
             try:
@@ -85,22 +89,46 @@ def bulk_create_products(items, user_id, warehouse_id=None):
                         warehouse_id,
                     ),
                 )
-                pid = cursor.lastrowid
-                conn.execute(
-                    """INSERT INTO movements
-                       (type, product_id, employee_id, user_id, quantity, notes, warehouse_id)
-                       VALUES ('entrada', ?, NULL, ?, 1, ?, ?)""",
-                    (
-                        pid,
-                        user_id,
-                        f"Alta masiva — Serial: {item.get('serial', '') or 'S/N'}",
-                        warehouse_id,
-                    ),
-                )
+                created_items.append({
+                    "product_id": cursor.lastrowid,
+                    "name": item["name"],
+                    "brand": item.get("brand", ""),
+                    "unit": item.get("unit", "und"),
+                    "seriales": item.get("serial") or item.get("mac") or "",
+                })
                 ok += 1
             except Exception:
                 label = item.get("serial") or item.get("mac") or f"fila {ok + len(duplicados) + 1}"
                 duplicados.append(label)
+
+        if ok > 0:
+            first = created_items[0]
+            notes = f"Alta masiva: {ok} unidad(es) — {first['name']}"
+            if first["brand"]:
+                notes += f" ({first['brand']})"
+            cursor = conn.cursor()
+            cursor.execute(
+                """INSERT INTO movements
+                   (type, product_id, employee_id, user_id, quantity, notes, warehouse_id)
+                   VALUES ('entrada', 0, NULL, ?, ?, ?, ?)""",
+                (user_id, ok, notes, warehouse_id),
+            )
+            movement_id = cursor.lastrowid
+            for it in created_items:
+                cursor.execute(
+                    """INSERT INTO movement_items
+                       (movement_id, product_id, name, brand, qty, unit, seriales)
+                       VALUES (?, ?, ?, ?, 1, ?, ?)""",
+                    (
+                        movement_id,
+                        it["product_id"],
+                        it["name"],
+                        it["brand"],
+                        it["unit"],
+                        it["seriales"],
+                    ),
+                )
+
         conn.commit()
         _invalidate_prefix("units_by_model")
         _invalidate_prefix("products_grouped")
