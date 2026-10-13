@@ -3196,6 +3196,11 @@ class _ProductDialog(BaseDialog):
         if barcode and not re.match(r"^[a-zA-Z0-9\-]+$", barcode):
             MessageDialog(self, "Aviso", "Código de barras inválido.")
             return
+        if self.mac_e is not None and not serial and not mac:
+            MessageDialog(
+                self, "Aviso", "La unidad debe tener al menos un Serial o MAC."
+            )
+            return
 
         payload = {
             "serial": serial or None,
