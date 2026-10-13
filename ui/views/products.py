@@ -2552,7 +2552,6 @@ class _RegistrarProductoDialog(BaseDialog):
             command=self.on_categoria_change,
         )
         self.in_marca = LabeledEntry(sec, f, "Marca / Fabricante")
-        self.in_modelo = LabeledEntry(sec, f, "Modelo", mono=True)
         self._nuevo_prov_btn = None
 
         def _build_plus(wrap):
@@ -2582,7 +2581,6 @@ class _RegistrarProductoDialog(BaseDialog):
         self._place(self.in_barcode, 1, 1)
         self._place(self.in_categoria, 2, 0, span=2)
         self._place(self.in_marca, 3, 0)
-        self._place(self.in_modelo, 3, 1)
         self._place(self.in_proveedor, 4, 0, span=2, pady=(0, 0))
 
     # ── Proveedor rápido (añadir sin salir del registro) ─────────────────────
@@ -2826,7 +2824,6 @@ class _RegistrarProductoDialog(BaseDialog):
             "marca": self.in_marca.get()
             if not self._prefill.get("brand")
             else self._prefill["brand"],
-            "modelo": self.in_modelo.get(),
             "proveedor": self.in_proveedor.get(),
             "unidad": self._unidad_code(),
             "control": self.control_mode,
