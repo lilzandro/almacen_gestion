@@ -1,4 +1,5 @@
 import tkinter as tk
+from functools import lru_cache
 from tkinter import filedialog
 import customtkinter as ctk
 from ui.colors import (
@@ -101,6 +102,13 @@ from ventanaejemplo.widgets import (
     section_header,
 )
 from core.phone_scan import make_qr_pil
+
+
+@lru_cache(maxsize=None)
+def _font(size, weight="normal"):
+    """CTkFont reutilizable: evita crear una fuente por fila en cada refresh."""
+    return ctk.CTkFont(size=size, weight=weight)
+
 
 _PILL_COLORS = {
     "disponible": (DISPONIBLE_BG, DISPONIBLE_FG),
@@ -1102,7 +1110,7 @@ class _ChildRow(ctk.CTkFrame):
             self,
             text=_trunc(display_text, 18),
             width=sw,
-            font=ctk.CTkFont(size=13),
+            font=_font(13),
             text_color=GRIS_AZULADO,
             anchor="w",
         ).pack(side="left", padx=spx)
@@ -1113,7 +1121,7 @@ class _ChildRow(ctk.CTkFrame):
                 self,
                 text=_trunc(self.unit["mac"], 19),
                 width=200,
-                font=ctk.CTkFont(size=13),
+                font=_font(13),
                 text_color=GRIS_AZULADO,
                 anchor="w",
             ).pack(side="left", padx=(8, 8))
@@ -1121,7 +1129,7 @@ class _ChildRow(ctk.CTkFrame):
                 self,
                 text=_trunc(self.unit["barcode"], 16),
                 width=160,
-                font=ctk.CTkFont(size=13),
+                font=_font(13),
                 text_color=GRIS_AZULADO,
                 anchor="w",
             ).pack(side="left", padx=(8, 8))
@@ -1130,7 +1138,7 @@ class _ChildRow(ctk.CTkFrame):
                 self,
                 text=_trunc(self.unit["barcode"], 16),
                 width=160,
-                font=ctk.CTkFont(size=13),
+                font=_font(13),
                 text_color=GRIS_AZULADO,
                 anchor="w",
             ).pack(side="left", padx=(8, 8))
@@ -1139,7 +1147,7 @@ class _ChildRow(ctk.CTkFrame):
             self,
             text=fecha,
             width=140,
-            font=ctk.CTkFont(size=13),
+            font=_font(13),
             text_color=TEXTO_SECUNDARIO,
             anchor="w",
         ).pack(side="left", padx=(8, 8))
@@ -1149,7 +1157,7 @@ class _ChildRow(ctk.CTkFrame):
                 self,
                 text=f"{qty} m",
                 width=80,
-                font=ctk.CTkFont(size=13),
+                font=_font(13),
                 text_color=GRIS_AZULADO,
                 anchor="w",
             ).pack(side="left", padx=(8, 8))
@@ -1159,7 +1167,7 @@ class _ChildRow(ctk.CTkFrame):
                 self,
                 text=str(qty),
                 width=80,
-                font=ctk.CTkFont(size=13),
+                font=_font(13),
                 text_color=GRIS_AZULADO,
                 anchor="w",
             ).pack(side="left", padx=(8, 8))
@@ -1190,7 +1198,7 @@ class _ChildRow(ctk.CTkFrame):
                 fg_color=BLANCO,
                 hover_color=HOVER_FILA_BG,
                 text_color=NARANJA_INTENSO,
-                font=ctk.CTkFont(size=12, weight="bold"),
+                font=_font(12, "bold"),
                 border_width=1,
                 border_color=NARANJA_INTENSO,
             ).pack(side="right", padx=(0, 0))
@@ -1203,7 +1211,7 @@ class _ChildRow(ctk.CTkFrame):
             fg_color=BLANCO,
             hover_color=HOVER_FILA_BG,
             text_color=AZUL_MARINO,
-            font=ctk.CTkFont(size=12, weight="bold"),
+            font=_font(12, "bold"),
             border_width=1,
             border_color=AZUL_MARINO,
         ).pack(side="right", padx=(0, 4) if self._on_delete else (0, 0))
@@ -1276,7 +1284,7 @@ class _GroupRow(ctk.CTkFrame):
             fg_color="transparent",
             hover_color=CHEVRON_HOVER,
             text_color=TEXTO_SECUNDARIO,
-            font=ctk.CTkFont(size=15),
+            font=_font(15),
             command=self._toggle,
         )
         self.chevron.grid(row=0, column=0, padx=(12, 4))
@@ -1337,7 +1345,7 @@ class _GroupRow(ctk.CTkFrame):
             text=badge_txt,
             fg_color=FONDO_BADGE,
             corner_radius=12,
-            font=ctk.CTkFont(size=15, weight="bold"),
+            font=_font(15, "bold"),
             text_color=GRIS_AZULADO,
         )
         badge.place(relx=0.5, rely=0.5, anchor="center")
@@ -1370,13 +1378,13 @@ class _GroupRow(ctk.CTkFrame):
         pill = ctk.CTkFrame(hold4, fg_color=stock_bg, corner_radius=12)
         pill.place(relx=0.5, rely=0.5, anchor="center")
         ctk.CTkLabel(
-            pill, text="●", text_color=stock_fg, font=ctk.CTkFont(size=8)
+            pill, text="●", text_color=stock_fg, font=_font(8)
         ).pack(side="left", padx=(8, 4))
         ctk.CTkLabel(
             pill,
             text=stock_txt,
             text_color=stock_fg,
-            font=ctk.CTkFont(size=15, weight="bold"),
+            font=_font(15, "bold"),
         ).pack(side="left", padx=(0, 10), pady=3)
         self._tk_labels.append(hold4)
 
@@ -1407,7 +1415,7 @@ class _GroupRow(ctk.CTkFrame):
             fg_color=AZUL_MARINO,
             hover_color=AZUL_NOCHE,
             text_color="white",
-            font=ctk.CTkFont(size=15, weight="bold"),
+            font=_font(15, "bold"),
             border_width=0,
         ).grid(row=0, column=6, padx=(8, 8))
 
