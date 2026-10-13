@@ -177,8 +177,10 @@ def initialize_db():
         CREATE INDEX IF NOT EXISTS idx_products_status   ON products(status);
         CREATE INDEX IF NOT EXISTS idx_products_brand    ON products(brand);
         CREATE INDEX IF NOT EXISTS idx_products_wh       ON products(warehouse_id);
+        CREATE INDEX IF NOT EXISTS idx_products_name_brand ON products(name, brand);
         CREATE INDEX IF NOT EXISTS idx_movements_ts      ON movements(timestamp);
         CREATE INDEX IF NOT EXISTS idx_movements_product ON movements(product_id);
+        CREATE INDEX IF NOT EXISTS idx_movement_items_movement ON movement_items(movement_id);
     """)
 
     # Seed almacenes por defecto

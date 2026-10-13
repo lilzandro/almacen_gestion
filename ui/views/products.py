@@ -248,6 +248,7 @@ class ProductsView(ctk.CTkFrame):
         self._expanded = {}
         self._last_refresh = 0.0
         self._open_after_id = None
+        self._render_gen = 0
         self._scan_help_shown = False
         self._group_edit_fn = lambda g: self._edit_group(g)
         self.grid_rowconfigure(2, weight=1)
@@ -542,23 +543,40 @@ class ProductsView(ctk.CTkFrame):
                 text_color=TEXTO_SECUNDARIO,
                 justify="center",
             ).pack(pady=60)
-        for i, g in enumerate(groups):
-            group_key = f"{g['name']}__{g['brand']}"
-            bg = FONDO_ROW_PAR if i % 2 == 0 else FONDO_ROW_IMPAR
+        # Construir las filas por lotes para no congelar la ventana en
+        # catálogos grandes (mismo patrón que make_dashboard_movements_list).
+        self._render_gen += 1
+        gen = self._render_gen
 
-            row = _GroupRow(
-                self._scroll,
-                g,
-                on_toggle=self._toggle_row,
-                bg_color=bg,
-                on_edit_group=self._group_edit_fn,
-            )
-            row.pack(fill="x", pady=(0, 1))
+        def _build_batch(start=0, batch_size=12):
+            if gen != self._render_gen or not self._scroll.winfo_exists():
+                return
+            end = min(start + batch_size, len(groups))
+            for i in range(start, end):
+                g = groups[i]
+                group_key = f"{g['name']}__{g['brand']}"
+                bg = FONDO_ROW_PAR if i % 2 == 0 else FONDO_ROW_IMPAR
 
-            if group_key in expanded_keys:
-                row.is_open = True
-                row.chevron.configure(text="▾")
-                self._open_group(row, g, wh_id)
+                row = _GroupRow(
+                    self._scroll,
+                    g,
+                    on_toggle=self._toggle_row,
+                    bg_color=bg,
+                    on_edit_group=self._group_edit_fn,
+                )
+                row.pack(fill="x", pady=(0, 1))
+
+                if group_key in expanded_keys:
+                    row.is_open = True
+                    row.chevron.configure(text="▾")
+                    self._open_group(row, g, wh_id)
+            if end < len(groups):
+                try:
+                    self.after(1, _build_batch, end, batch_size)
+                except Exception:
+                    return
+
+        _build_batch()
 
         if self._selected_id and not self._selected_widget:
             self._selected_id = None
@@ -653,21 +671,8 @@ class ProductsView(ctk.CTkFrame):
             MessageDialog(self, "Error",
                           f"No se pudieron cargar las unidades:\n{e}", is_error=True)
             return
-        for i, u in enumerate(units):
-            child = _ChildRow(
-                container,
-                u,
-                unit_code=unit_code,
-                on_select=self._select_unit,
-                on_edit=self._edit_dialog,
-                on_delete=self._delete if is_admin else None,
-            )
-            child.pack(fill="x", padx=(64, 8), pady=1)
-            if self._selected_id and str(u["id"]) == str(self._selected_id):
-                self._selected_widget = child
-                child.select()
-            if i > 0 and i % 10 == 0:
-                container.update_idletasks()
+
+        self._expanded[group_key] = container
 
         if not units:
             ctk.CTkLabel(
@@ -677,8 +682,33 @@ class ProductsView(ctk.CTkFrame):
                 text_color=TEXTO_SECUNDARIO,
                 anchor="w",
             ).pack(fill="x", padx=(64, 8), pady=10)
+            return
 
-        self._expanded[group_key] = container
+        # Construir las filas hijas por lotes para no bloquear el event loop.
+        def _build_batch(start=0, batch_size=10):
+            if not container.winfo_exists():
+                return
+            end = min(start + batch_size, len(units))
+            for u in units[start:end]:
+                child = _ChildRow(
+                    container,
+                    u,
+                    unit_code=unit_code,
+                    on_select=self._select_unit,
+                    on_edit=self._edit_dialog,
+                    on_delete=self._delete if is_admin else None,
+                )
+                child.pack(fill="x", padx=(64, 8), pady=1)
+                if self._selected_id and str(u["id"]) == str(self._selected_id):
+                    self._selected_widget = child
+                    child.select()
+            if end < len(units):
+                try:
+                    self.after(1, _build_batch, end, batch_size)
+                except Exception:
+                    return
+
+        _build_batch()
 
     def _select_unit(self, unit_id, widget):
         if self._selected_widget and self._selected_widget.winfo_exists():
