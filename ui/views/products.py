@@ -2851,6 +2851,8 @@ class _RegistrarProductoDialog(BaseDialog):
         return data
 
     def guardar(self):
+        import re
+
         data = self.recolectar()
         faltan = []
         nombre = data.get("nombre") or (
@@ -2899,6 +2901,15 @@ class _RegistrarProductoDialog(BaseDialog):
                 serial = r["serial"].get().strip()
                 mac = (r.get("mac") and r["mac"].get().strip()) or ""
                 bc = (r.get("barcode") and r["barcode"].get().strip()) or None
+                if mac and not re.match(r"^([A-Za-z0-9]{2}[:\-]){5}[A-Za-z0-9]{2}$", mac):
+                    MessageDialog(
+                        self, "Error",
+                        f"MAC inválida en fila: {mac}. Usa formato AA-BB-CC-DD-EE-FF.",
+                    )
+                    return
+                if bc and not re.match(r"^[a-zA-Z0-9\-]+$", bc):
+                    MessageDialog(self, "Error", f"Código de barras inválido: {bc}")
+                    return
                 if not serial and not mac:
                     continue
                 if serial and serial in seen:
@@ -2942,9 +2953,10 @@ class _RegistrarProductoDialog(BaseDialog):
             import sqlite3
 
             try:
-                stock_val = int(data.get("stock") or 0)
+                stock_val = int(str(data.get("stock") or "").strip() or 0)
             except (ValueError, TypeError):
-                stock_val = 0
+                MessageDialog(self, "Aviso", "La cantidad debe ser un número entero.")
+                return
             if stock_val < 0:
                 MessageDialog(self, "Aviso", "El stock no puede ser negativo.")
                 return
