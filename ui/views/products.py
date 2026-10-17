@@ -2912,15 +2912,40 @@ class _RegistrarProductoDialog(BaseDialog):
         )
 
         if self.control_mode == CTRL_SERIE and self.serial_table:
+            rows = self.serial_table.rows
+
+            def _row_has_data(r):
+                return bool(
+                    r["serial"].get().strip()
+                    or (r.get("mac") and r["mac"].get().strip())
+                    or (r.get("barcode") and r["barcode"].get().strip())
+                )
+
+            if not any(
+                _row_has_data(r) for r in rows if r["chk_var"].get() != "on"
+            ):
+                MessageDialog(
+                    self, "Aviso", "Agrega al menos un equipo con serial o MAC."
+                )
+                return
+
             items = []
             seen = set()
             seen_bc = set()
             global_bc = (data.get("barcode") or "").strip() or None
             global_bc_used = False
-            for row_no, r in enumerate(self.serial_table.rows, start=1):
+            for row_no, r in enumerate(rows, start=1):
+                if r["chk_var"].get() == "on":
+                    continue  # fila marcada "Sin": se omite a propósito
                 serial = r["serial"].get().strip()
                 mac = (r.get("mac") and r["mac"].get().strip()) or ""
                 bc = (r.get("barcode") and r["barcode"].get().strip()) or None
+                if not serial and not mac and not bc:
+                    MessageDialog(
+                        self, "Error",
+                        f"Fila {row_no}: está vacía. Complétala o quítala.",
+                    )
+                    return
                 if mac and not re.match(r"^([A-Za-z0-9]{2}[:\-]){5}[A-Za-z0-9]{2}$", mac):
                     marcar_error_campo(r.get("mac"))
                     MessageDialog(
@@ -2932,19 +2957,29 @@ class _RegistrarProductoDialog(BaseDialog):
                     marcar_error_campo(r.get("barcode"))
                     MessageDialog(self, "Error", f"Código de barras inválido: {bc}")
                     return
-                if not serial and not mac:
-                    continue
-                if self.serial_table.show_mac and (not serial or not mac):
+                if not self.serial_table.show_mac and not serial and not mac:
+                    continue  # categorías sin MAC: fila sin serial se ignora igual que antes
+                if self.serial_table.show_mac:
+                    faltan = []
                     if not serial:
-                        marcar_error_campo(r.get("serial"))
+                        faltan.append("Serial")
                     if not mac:
-                        marcar_error_campo(r.get("mac"))
-                    MessageDialog(
-                        self, "Error",
-                        f"Fila {row_no}: falta Serial o MAC. "
-                        "Los equipos de red requieren ambos.",
-                    )
-                    return
+                        faltan.append("MAC")
+                    if not bc:
+                        faltan.append("Código")
+                    if faltan:
+                        if not serial:
+                            marcar_error_campo(r.get("serial"))
+                        if not mac:
+                            marcar_error_campo(r.get("mac"))
+                        if not bc:
+                            marcar_error_campo(r.get("barcode"))
+                        MessageDialog(
+                            self, "Error",
+                            f"Fila {row_no}: falta {' / '.join(faltan)}. "
+                            "Los equipos de red requieren Serial, MAC y Código.",
+                        )
+                        return
                 if serial and serial in seen:
                     marcar_error_campo(r.get("serial"))
                     MessageDialog(self, "Error", f"Serial duplicado: {serial}")
