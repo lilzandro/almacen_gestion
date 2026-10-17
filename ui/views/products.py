@@ -3203,6 +3203,7 @@ class _ProductDialog(BaseDialog):
         ).pack(anchor="w", padx=15, pady=(14, 4))
 
         unit = d.get("unit") or "und"
+        self._unit = unit
         has_mac = bool((d.get("mac") or "").strip())
         if has_mac:
             field_defs = [
@@ -3286,12 +3287,22 @@ class _ProductDialog(BaseDialog):
             marcar_error_campo(self.barcode_e)
             MessageDialog(self, "Aviso", "Código de barras inválido.")
             return
-        if self.mac_e is not None and not serial and not mac:
-            marcar_error_campo(self.serial_e)
-            marcar_error_campo(self.mac_e)
+        if self.mac_e is not None and (not serial or not mac):
+            if not serial:
+                marcar_error_campo(self.serial_e)
+            if not mac:
+                marcar_error_campo(self.mac_e)
             MessageDialog(
-                self, "Aviso", "La unidad debe tener al menos un Serial o MAC."
+                self, "Aviso", "La unidad debe tener Serial y MAC."
             )
+            return
+        if (
+            self.mac_e is None
+            and getattr(self, "_unit", "und") == "und"
+            and not serial
+        ):
+            marcar_error_campo(self.serial_e)
+            MessageDialog(self, "Aviso", "La unidad debe tener Serial.")
             return
 
         payload = {
