@@ -116,6 +116,8 @@ _PILL_COLORS = {
     "no disponible": (NO_DISPONIBLE_BG, NO_DISPONIBLE_FG),
     "inactivo": (INACTIVO_BG, INACTIVO_FG),
 }
+# Categorías donde el "Modelo" del equipo es un dato relevante.
+CATEGORIAS_CON_MODELO = {"Equipos de Red", "Herramientas"}
 _STATUS_LABELS = {
     "disponible": "Disponible",
     "no disponible": "No Disponible",
@@ -901,6 +903,7 @@ class ProductsView(ctk.CTkFrame):
             {
                 "name": common["name"],
                 "brand": common.get("brand", ""),
+                "modelo": common.get("modelo", ""),
                 "barcode": item.get("barcode") or None,
                 "serial": item["serial"],
                 "mac": item["mac"],
@@ -1657,6 +1660,7 @@ class _GroupEditDialog(BaseDialog):
             prefill={
                 "name": g["name"],
                 "brand": g["brand"] or "",
+                "modelo": g.get("modelo") or "",
                 "supplier_id": g["supplier_id"],
                 "unit": g["unit"] or "und",
             },
@@ -2384,6 +2388,8 @@ class _RegistrarProductoDialog(BaseDialog):
                 self.in_nombre.entry.configure(state="disabled")
                 self.in_marca.set(prefill["brand"] or "")
                 self.in_marca.entry.configure(state="disabled")
+                self.in_modelo.set(prefill.get("modelo") or "")
+                self.in_modelo.entry.configure(state="disabled")
             if prefill.get("barcode"):
                 self.in_barcode.set(prefill["barcode"])
             if prefill.get("name"):
@@ -2556,6 +2562,7 @@ class _RegistrarProductoDialog(BaseDialog):
             command=self.on_categoria_change,
         )
         self.in_marca = LabeledEntry(sec, f, "Marca / Fabricante")
+        self.in_modelo = LabeledEntry(sec, f, "Modelo", mono=True)
         self._nuevo_prov_btn = None
 
         def _build_plus(wrap):
@@ -2585,6 +2592,7 @@ class _RegistrarProductoDialog(BaseDialog):
         self._place(self.in_barcode, 1, 1)
         self._place(self.in_categoria, 2, 0, span=2)
         self._place(self.in_marca, 3, 0)
+        self._place(self.in_modelo, 3, 1)
         self._place(self.in_proveedor, 4, 0, span=2, pady=(0, 0))
 
     # ── Proveedor rápido (añadir sin salir del registro) ─────────────────────
@@ -2743,6 +2751,13 @@ class _RegistrarProductoDialog(BaseDialog):
         self.in_unidad.set(UNIDAD_LABEL[cfg["unidad"]])
         self.inv_toggle.show_only(cfg["control"])
         self.set_control(cfg["control"])
+        try:
+            if nombre in CATEGORIAS_CON_MODELO:
+                self.in_modelo.grid()
+            else:
+                self.in_modelo.grid_remove()
+        except Exception:
+            pass
 
     # ── Contador de cabecera ─────────────────────────────────────────────────
     def _unidad_code(self):
@@ -2828,6 +2843,9 @@ class _RegistrarProductoDialog(BaseDialog):
             "marca": self.in_marca.get()
             if not self._prefill.get("brand")
             else self._prefill["brand"],
+            "modelo": self.in_modelo.get()
+            if self.in_categoria.get() in CATEGORIAS_CON_MODELO
+            else "",
             "proveedor": self.in_proveedor.get(),
             "unidad": self._unidad_code(),
             "control": self.control_mode,
@@ -3020,6 +3038,7 @@ class _RegistrarProductoDialog(BaseDialog):
             common = {
                 "name": nombre,
                 "brand": marca,
+                "modelo": (data.get("modelo") or "").strip(),
                 "barcode": data.get("barcode") or None,
                 "supplier_id": supplier_id,
                 "unit": data.get("unidad", "und"),
@@ -3058,6 +3077,7 @@ class _RegistrarProductoDialog(BaseDialog):
                     supplier_id,
                     data.get("unidad", "und"),
                     warehouse_id=wh_id,
+                    modelo=(data.get("modelo") or "").strip(),
                 )
             except sqlite3.IntegrityError as e:
                 msg = (

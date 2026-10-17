@@ -62,7 +62,7 @@ def bulk_create_products(items, user_id, warehouse_id=None):
     `movements` con product_id=0 y quantity=total, y una fila por unidad en
     `movement_items`.
 
-    items: lista de dicts con claves: name, brand, serial, mac, supplier_id, unit[, barcode]
+    items: lista de dicts con claves: name, brand, modelo, serial, mac, supplier_id, unit[, barcode]
     Retorna: (ok: int, duplicados: list[str])
     """
     conn = get_connection()
@@ -75,13 +75,14 @@ def bulk_create_products(items, user_id, warehouse_id=None):
                 cursor = conn.cursor()
                 cursor.execute(
                     """INSERT INTO products
-                       (name, barcode, brand, serial, mac, quantity,
+                       (name, barcode, brand, modelo, serial, mac, quantity,
                         supplier_id, unit, warehouse_id)
-                       VALUES (?,?,?,?,?,0,?,?,?)""",
+                       VALUES (?,?,?,?,?,?,0,?,?,?)""",
                     (
                         item["name"],
                         item.get("barcode"),
                         item.get("brand", ""),
+                        item.get("modelo", ""),
                         item.get("serial", ""),
                         item.get("mac", ""),
                         item.get("supplier_id"),
@@ -429,6 +430,7 @@ def get_products_grouped(search="", status_filter="todos", warehouse_id=None):
             rows = conn.execute(
                 f"""
                 SELECT p.name, COALESCE(p.brand,'') AS brand,
+                       MAX(COALESCE(p.modelo,'')) AS modelo,
                        COUNT(*) AS unit_count,
                        SUM(CASE WHEN p.status='disponible' THEN 1 ELSE 0 END) AS disponible_count,
                        MAX(CASE WHEN COALESCE(p.serial,'') != '' THEN 1 ELSE 0 END) AS has_serial,
@@ -511,7 +513,8 @@ def get_all_products(search="", include_inactive=False, status_filter="todos",
 
         rows = conn.execute(
             f"""
-            SELECT p.id, p.name, p.barcode, p.brand, p.serial, p.mac,
+            SELECT p.id, p.name, p.barcode, p.brand, COALESCE(p.modelo,'') AS modelo,
+                   p.serial, p.mac,
                    p.quantity, COALESCE(p.unit,'und') AS unit, p.status,
                    p.supplier_id, COALESCE(sup.name,'N/A') AS supplier_name,
                    p.created_at, p.updated_at
@@ -590,6 +593,7 @@ def create_product(
     supplier_id,
     unit="und",
     warehouse_id=None,
+    modelo="",
 ):
     """Crea un nuevo producto"""
     conn = get_connection()
@@ -597,12 +601,13 @@ def create_product(
         cursor = conn.cursor()
         cursor.execute(
             """INSERT INTO products
-               (name, barcode, brand, serial, mac, quantity, supplier_id, unit, warehouse_id)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
+               (name, barcode, brand, modelo, serial, mac, quantity, supplier_id, unit, warehouse_id)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
             (
                 name,
                 barcode or None,
                 brand or "",
+                modelo or "",
                 serial or "",
                 mac or "",
                 quantity or 0,

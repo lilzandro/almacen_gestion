@@ -67,6 +67,7 @@ def initialize_db():
             name TEXT NOT NULL,
             barcode TEXT UNIQUE,
             brand TEXT DEFAULT '',
+            modelo TEXT DEFAULT '',
             serial TEXT,
             mac TEXT,
             quantity INTEGER DEFAULT 0,
@@ -113,6 +114,11 @@ def initialize_db():
 
     try:
         cursor.execute("ALTER TABLE products ADD COLUMN status TEXT DEFAULT 'disponible'")
+    except sqlite3.OperationalError:
+        pass  # La columna ya existe
+
+    try:
+        cursor.execute("ALTER TABLE products ADD COLUMN modelo TEXT DEFAULT ''")
     except sqlite3.OperationalError:
         pass  # La columna ya existe
 
