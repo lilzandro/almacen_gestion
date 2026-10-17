@@ -77,7 +77,6 @@ from ventanaejemplo.theme import (
     NAVY_2,
     BLUE as V_BLUE,
     BLUE_D,
-    ORANGE as V_ORANGE,
     ORANGE_D,
     ORANGE_SOFT,
     INK_2,
