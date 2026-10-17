@@ -3039,6 +3039,14 @@ class _RegistrarProductoDialog(BaseDialog):
                 marcar_error_campo(getattr(self, "in_stock", None))
                 MessageDialog(self, "Aviso", "El stock no puede ser negativo.")
                 return
+            if not (data.get("barcode") or "").strip():
+                marcar_error_campo(self.in_barcode)
+                MessageDialog(self, "Aviso", "El código de barras es obligatorio.")
+                return
+            if stock_val <= 0:
+                marcar_error_campo(getattr(self, "in_stock", None))
+                MessageDialog(self, "Aviso", "La cantidad debe ser mayor que 0.")
+                return
             try:
                 pid = create_product(
                     nombre,
