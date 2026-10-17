@@ -2958,7 +2958,14 @@ class _RegistrarProductoDialog(BaseDialog):
                     MessageDialog(self, "Error", f"Código de barras inválido: {bc}")
                     return
                 if not self.serial_table.show_mac and not serial and not mac:
-                    continue  # categorías sin MAC: fila sin serial se ignora igual que antes
+                    # Solo Código de Barras no identifica la unidad: se avisa en
+                    # vez de descartar la fila en silencio.
+                    marcar_error_campo(r.get("barcode"))
+                    MessageDialog(
+                        self, "Error",
+                        "Una fila tiene Código de Barras pero falta Serial o MAC.",
+                    )
+                    return
                 if self.serial_table.show_mac:
                     faltan = []
                     if not serial:
