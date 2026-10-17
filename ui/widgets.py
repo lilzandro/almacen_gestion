@@ -3,6 +3,62 @@ import tkinter as tk
 from tkinter import ttk
 from ui.colors import *
 
+_ERROR_BORDE = "#D32F2F"  # rojo de error
+
+
+def _borde_de(widget):
+    """Devuelve el widget cuyo borde se pinta (soporta LabeledEntry/Select)."""
+    if widget is None:
+        return None
+    entry = getattr(widget, "entry", None)
+    if entry is not None and hasattr(entry, "configure"):
+        return entry
+    wrap = getattr(widget, "wrap", None)
+    if wrap is not None and hasattr(wrap, "configure"):
+        return wrap
+    return widget
+
+
+def marcar_error_campo(widget):
+    """Pone el borde en rojo para señalar el campo que falló una validación.
+
+    Guarda el color/ancho original la primera vez para poder restaurarlo con
+    `limpiar_error_campo`.
+    """
+    w = _borde_de(widget)
+    if w is None:
+        return
+    try:
+        if not hasattr(w, "_borde_normal"):
+            w._borde_normal = w.cget("border_color")
+            w._borde_ancho_normal = w.cget("border_width")
+        w.configure(
+            border_color=_ERROR_BORDE,
+            border_width=max(1, int(w._borde_ancho_normal or 0)),
+        )
+    except Exception:
+        pass
+
+
+def limpiar_error_campo(widget):
+    """Restaura el borde original de un campo marcado con error."""
+    w = _borde_de(widget)
+    if w is None:
+        return
+    try:
+        if hasattr(w, "_borde_normal"):
+            w.configure(
+                border_color=w._borde_normal,
+                border_width=w._borde_ancho_normal,
+            )
+    except Exception:
+        pass
+
+
+def limpiar_errores(*widgets):
+    for widget in widgets:
+        limpiar_error_campo(widget)
+
 
 def setup_treeview_style():
     style = ttk.Style()

@@ -89,6 +89,7 @@ class LabeledSelect(ctk.CTkFrame):
         wrap = ctk.CTkFrame(self, fg_color=WHITE, border_color=LINE, border_width=1,
                             corner_radius=RADIUS_FIELD, height=FIELD_H)
         wrap.grid(row=1, column=0, sticky="ew"); wrap.grid_propagate(False)
+        self.wrap = wrap
         self.var = ctk.StringVar(value=placeholder)
         self.menu = ctk.CTkOptionMenu(
             wrap, values=values, variable=self.var, command=self._on,

@@ -48,6 +48,8 @@ from ui.widgets import (
     MessageDialog,
     ConfirmDialog,
     show_centered,
+    marcar_error_campo,
+    limpiar_errores,
 )
 from database.repository import (
     get_products_grouped,
@@ -1662,8 +1664,10 @@ class _GroupEditDialog(BaseDialog):
         )
 
     def _save(self):
+        limpiar_errores(self._name_e, self._brand_e)
         name = self._name_e.get().strip()
         if not name:
+            marcar_error_campo(self._name_e)
             MessageDialog(self, "Aviso", "El nombre es obligatorio.")
             return
         brand = self._brand_e.get().strip()
@@ -1674,6 +1678,7 @@ class _GroupEditDialog(BaseDialog):
             exclude_name=old["name"],
             exclude_brand=old["brand"],
         ):
+            marcar_error_campo(self._name_e)
             MessageDialog(
                 self,
                 "Aviso",
@@ -2847,9 +2852,27 @@ class _RegistrarProductoDialog(BaseDialog):
             )
         return data
 
+    def _limpiar_errores(self):
+        campos = [
+            getattr(self, "in_nombre", None),
+            getattr(self, "in_barcode", None),
+            getattr(self, "in_categoria", None),
+            getattr(self, "in_marca", None),
+            getattr(self, "in_proveedor", None),
+            getattr(self, "in_unidad", None),
+            getattr(self, "in_stock", None),
+            getattr(self, "in_serial_stock", None),
+        ]
+        limpiar_errores(*[c for c in campos if c is not None])
+        st = getattr(self, "serial_table", None)
+        if st is not None:
+            for r in st.rows:
+                limpiar_errores(r.get("serial"), r.get("mac"), r.get("barcode"))
+
     def guardar(self):
         import re
 
+        self._limpiar_errores()
         data = self.recolectar()
         faltan = []
         nombre = data.get("nombre") or (
@@ -2857,10 +2880,11 @@ class _RegistrarProductoDialog(BaseDialog):
         )
         if not nombre:
             faltan.append("Nombre")
-            self.in_nombre.entry.configure(border_color=V_ORANGE)
+            marcar_error_campo(self.in_nombre)
         categoria = data.get("categoria", "")
         if not categoria or categoria.startswith("Seleccionar"):
             faltan.append("Categoría")
+            marcar_error_campo(self.in_categoria)
         if faltan:
             MessageDialog(
                 self,
@@ -2899,17 +2923,23 @@ class _RegistrarProductoDialog(BaseDialog):
                 mac = (r.get("mac") and r["mac"].get().strip()) or ""
                 bc = (r.get("barcode") and r["barcode"].get().strip()) or None
                 if mac and not re.match(r"^([A-Za-z0-9]{2}[:\-]){5}[A-Za-z0-9]{2}$", mac):
+                    marcar_error_campo(r.get("mac"))
                     MessageDialog(
                         self, "Error",
                         f"MAC inválida en fila: {mac}. Usa formato AA-BB-CC-DD-EE-FF.",
                     )
                     return
                 if bc and not re.match(r"^[a-zA-Z0-9\-]+$", bc):
+                    marcar_error_campo(r.get("barcode"))
                     MessageDialog(self, "Error", f"Código de barras inválido: {bc}")
                     return
                 if not serial and not mac:
                     continue
                 if self.serial_table.show_mac and (not serial or not mac):
+                    if not serial:
+                        marcar_error_campo(r.get("serial"))
+                    if not mac:
+                        marcar_error_campo(r.get("mac"))
                     MessageDialog(
                         self, "Error",
                         f"Fila {row_no}: falta Serial o MAC. "
@@ -2917,12 +2947,14 @@ class _RegistrarProductoDialog(BaseDialog):
                     )
                     return
                 if serial and serial in seen:
+                    marcar_error_campo(r.get("serial"))
                     MessageDialog(self, "Error", f"Serial duplicado: {serial}")
                     return
                 if serial:
                     seen.add(serial)
                 if bc:
                     if bc in seen_bc:
+                        marcar_error_campo(r.get("barcode"))
                         MessageDialog(
                             self, "Error", f"Código de barras duplicado: {bc}"
                         )
@@ -2959,9 +2991,11 @@ class _RegistrarProductoDialog(BaseDialog):
             try:
                 stock_val = int(str(data.get("stock") or "").strip() or 0)
             except (ValueError, TypeError):
+                marcar_error_campo(getattr(self, "in_stock", None))
                 MessageDialog(self, "Aviso", "La cantidad debe ser un número entero.")
                 return
             if stock_val < 0:
+                marcar_error_campo(getattr(self, "in_stock", None))
                 MessageDialog(self, "Aviso", "El stock no puede ser negativo.")
                 return
             try:
@@ -3190,17 +3224,22 @@ class _ProductDialog(BaseDialog):
     def _save_edit(self):
         import re
 
+        limpiar_errores(self.serial_e, self.mac_e, self.barcode_e, self.qty_e)
         serial = self.serial_e.get().strip()
         mac = self.mac_e.get().strip() if self.mac_e else ""
         barcode = self.barcode_e.get().strip()
 
         if mac and not re.match(r"^([A-Za-z0-9]{2}[:\-]){5}[A-Za-z0-9]{2}$", mac):
+            marcar_error_campo(self.mac_e)
             MessageDialog(self, "Aviso", "MAC inválida. Usa formato AA-BB-CC-DD-EE-FF.")
             return
         if barcode and not re.match(r"^[a-zA-Z0-9\-]+$", barcode):
+            marcar_error_campo(self.barcode_e)
             MessageDialog(self, "Aviso", "Código de barras inválido.")
             return
         if self.mac_e is not None and not serial and not mac:
+            marcar_error_campo(self.serial_e)
+            marcar_error_campo(self.mac_e)
             MessageDialog(
                 self, "Aviso", "La unidad debe tener al menos un Serial o MAC."
             )
@@ -3216,9 +3255,11 @@ class _ProductDialog(BaseDialog):
             try:
                 quantity = int(self.qty_e.get().strip() or 0)
             except ValueError:
+                marcar_error_campo(self.qty_e)
                 MessageDialog(self, "Aviso", "La cantidad debe ser un número entero.")
                 return
             if quantity < 0:
+                marcar_error_campo(self.qty_e)
                 MessageDialog(self, "Aviso", "La cantidad no puede ser negativa.")
                 return
             payload["quantity"] = quantity
