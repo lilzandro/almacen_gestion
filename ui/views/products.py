@@ -2894,7 +2894,7 @@ class _RegistrarProductoDialog(BaseDialog):
             seen_bc = set()
             global_bc = (data.get("barcode") or "").strip() or None
             global_bc_used = False
-            for r in self.serial_table.rows:
+            for row_no, r in enumerate(self.serial_table.rows, start=1):
                 serial = r["serial"].get().strip()
                 mac = (r.get("mac") and r["mac"].get().strip()) or ""
                 bc = (r.get("barcode") and r["barcode"].get().strip()) or None
@@ -2909,6 +2909,13 @@ class _RegistrarProductoDialog(BaseDialog):
                     return
                 if not serial and not mac:
                     continue
+                if self.serial_table.show_mac and (not serial or not mac):
+                    MessageDialog(
+                        self, "Error",
+                        f"Fila {row_no}: falta Serial o MAC. "
+                        "Los equipos de red requieren ambos.",
+                    )
+                    return
                 if serial and serial in seen:
                     MessageDialog(self, "Error", f"Serial duplicado: {serial}")
                     return
