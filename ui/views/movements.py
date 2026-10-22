@@ -1,7 +1,8 @@
 import tkinter as tk
 import tkinter.font as tkfont
 import customtkinter as ctk
-from datetime import datetime
+import os
+from datetime import datetime, timedelta
 from tkinter import filedialog, ttk
 from PIL import Image, ImageTk
 
@@ -14,6 +15,8 @@ from ui.widgets import (
 )
 from database.repository import (
     get_movement,
+    get_movement_counts,
+    get_product_movement_ranking,
     get_movement_detail,
     query_movements_view,
     get_movements_flat,
@@ -27,7 +30,39 @@ from database.repository import (
     update_movement,
     delete_movement,
 )
-from core.export import export_movements
+from core.export import (
+    export_critical_closing,
+    export_movements,
+    export_product_ranking,
+)
+
+
+REPORT_TYPES = [
+    "Diario", "Semanal", "Mensual", "Crítico de cierre",
+    "Por producto (ranking)",
+]
+
+
+def report_date_range(kind, today=None):
+    """Rango (desde, hasta) para un tipo de reporte. Diario=hoy,
+    Semanal=últimos 7 días, Mensual/resto=mes calendario en curso."""
+    today = today or datetime.now().date()
+    if kind == "Diario":
+        return today, today
+    if kind == "Semanal":
+        return today - timedelta(days=6), today
+    return today.replace(day=1), today
+
+
+def split_ranking(rows, limit=10):
+    """Separa el ranking en más y menos movidos sin repetir productos."""
+    top = list(rows[:limit])
+    top_keys = {(r.get("name"), r.get("brand")) for r in top}
+    bottom = [
+        r for r in reversed(rows)
+        if (r.get("name"), r.get("brand")) not in top_keys
+    ][:limit]
+    return top, bottom
 
 
 TYPE_STYLES = {
@@ -76,6 +111,268 @@ def _split_ts(ts):
         date, time_ = s.split(" ", 1)
         return date, time_[:8]
     return s, "—"
+
+
+class _ReportsDialog(BaseDialog):
+    """Diálogo para generar reportes por período, por producto o cierre."""
+
+    def __init__(self, parent, view):
+        super().__init__(parent)
+        self.title("Reportes")
+        self.geometry("560x640")
+        self.resizable(False, False)
+        self.configure(fg_color=DSG_BG)
+        self.transient(parent)
+        self._view = view
+        self._kind = ctk.StringVar(value="Diario")
+        self._build()
+        show_centered(self)
+        self.bind("<Escape>", lambda e: self.destroy())
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
+        self.after(50, self.grab_set)
+
+    def _build(self):
+        header = ctk.CTkFrame(self, fg_color=DSG_BRAND, height=58)
+        header.pack(fill="x")
+        header.pack_propagate(False)
+        ctk.CTkLabel(
+            header, text="REPORTES", font=ctk.CTkFont(size=19, weight="bold"),
+            text_color="white",
+        ).pack(side="left", padx=20)
+
+        body = ctk.CTkFrame(self, fg_color=DSG_SURF, corner_radius=10)
+        body.pack(fill="both", expand=True, padx=16, pady=14)
+
+        ctk.CTkLabel(
+            body, text="Tipo de reporte", anchor="w",
+            font=ctk.CTkFont(size=13, weight="bold"), text_color=DSG_TEXT,
+        ).pack(fill="x", padx=16, pady=(14, 4))
+        self._type_menu = ctk.CTkOptionMenu(
+            body, values=REPORT_TYPES, variable=self._kind,
+            font=ctk.CTkFont(size=13), height=36,
+            fg_color=DSG_BRAND, button_color=DSG_BRAND,
+            button_hover_color=DSG_PRIMARY_HOVER,
+            dropdown_font=ctk.CTkFont(size=13),
+            command=self._on_type_changed,
+        )
+        self._type_menu.pack(fill="x", padx=16)
+
+        self._dates_frame = ctk.CTkFrame(body, fg_color=DSG_SURF)
+        dates = ctk.CTkFrame(self._dates_frame, fg_color=DSG_SURF)
+        dates.pack(fill="x")
+        self._from_e = self._date_field(dates, "Desde", 0)
+        self._to_e = self._date_field(dates, "Hasta", 1)
+
+        quick = ctk.CTkFrame(self._dates_frame, fg_color=DSG_SURF)
+        quick.pack(fill="x", padx=16, pady=(8, 0))
+        for label, kind in (("Hoy", "Diario"), ("Esta semana", "Semanal"),
+                            ("Este mes", "Mensual")):
+            ctk.CTkButton(
+                quick, text=label, font=ctk.CTkFont(size=12),
+                height=28, corner_radius=7, fg_color=DSG_SURF,
+                hover_color=DSG_ROW_HOVER, border_width=1,
+                border_color=DSG_BORDER_CTRL, text_color=DSG_TEXT_BODY,
+                command=lambda k=kind: self._apply_dates(k),
+            ).pack(side="left", padx=(0, 6))
+
+        ctk.CTkLabel(
+            body, text="Envío (opcional)", anchor="w",
+            font=ctk.CTkFont(size=13, weight="bold"), text_color=DSG_TEXT,
+        ).pack(fill="x", padx=16, pady=(16, 2))
+
+        email_ok = all(os.environ.get(k) for k in (
+            "SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD", "REPORT_EMAIL_TO"
+        ))
+        telegram_ok = all(os.environ.get(k) for k in (
+            "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"
+        ))
+        self._email_var = tk.BooleanVar(value=False)
+        self._telegram_var = tk.BooleanVar(value=False)
+        ctk.CTkCheckBox(
+            body, text="Enviar por correo", variable=self._email_var,
+            font=ctk.CTkFont(size=13), text_color=DSG_TEXT_BODY,
+            fg_color=DSG_BRAND, hover_color=DSG_PRIMARY_HOVER,
+            state="normal" if email_ok else "disabled",
+        ).pack(anchor="w", padx=16, pady=2)
+        ctk.CTkCheckBox(
+            body, text="Enviar por Telegram", variable=self._telegram_var,
+            font=ctk.CTkFont(size=13), text_color=DSG_TEXT_BODY,
+            fg_color=DSG_BRAND, hover_color=DSG_PRIMARY_HOVER,
+            state="normal" if telegram_ok else "disabled",
+        ).pack(anchor="w", padx=16, pady=2)
+
+        if not (email_ok and telegram_ok):
+            missing = []
+            if not email_ok:
+                missing.append("SMTP_HOST/SMTP_USER/SMTP_PASSWORD/REPORT_EMAIL_TO")
+            if not telegram_ok:
+                missing.append("TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID")
+            ctk.CTkLabel(
+                body, text="Sin configurar: " + " · ".join(missing),
+                font=ctk.CTkFont(size=11), text_color=DSG_TEXT_SEC2,
+                wraplength=480, justify="left", anchor="w",
+            ).pack(fill="x", padx=16, pady=(4, 0))
+
+        self._status = ctk.CTkLabel(
+            body, text="", font=ctk.CTkFont(size=12),
+            text_color=DSG_TEXT_SEC2, anchor="w",
+        )
+        self._status.pack(fill="x", padx=16, pady=(10, 0))
+
+        btns = ctk.CTkFrame(self, fg_color=DSG_BG)
+        btns.pack(fill="x", padx=16, pady=(0, 14))
+        self._generate_btn = ctk.CTkButton(
+            btns, text="Generar PDF", height=40,
+            font=ctk.CTkFont(size=14, weight="bold"),
+            fg_color=DSG_PRIMARY, hover_color=DSG_PRIMARY_HOVER,
+            text_color="white", corner_radius=9,
+            command=self._generate,
+        )
+        self._generate_btn.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        ctk.CTkButton(
+            btns, text="Cancelar", height=40,
+            font=ctk.CTkFont(size=14, weight="bold"),
+            fg_color=DSG_SURF, hover_color=DSG_ROW_HOVER,
+            border_width=1, border_color=DSG_BORDER_CTRL,
+            text_color=DSG_TEXT_BODY, corner_radius=9,
+            command=self.destroy,
+        ).pack(side="left", fill="x", expand=True)
+
+        self._on_type_changed("Diario")
+
+    def _date_field(self, parent, label, column):
+        wrap = ctk.CTkFrame(parent, fg_color=DSG_SURF)
+        wrap.grid(row=0, column=column, sticky="ew", padx=(16 if column == 0 else 8, 16 if column == 1 else 8))
+        parent.grid_columnconfigure(column, weight=1)
+        ctk.CTkLabel(
+            wrap, text=label, anchor="w", font=ctk.CTkFont(size=12),
+            text_color=DSG_TEXT_SEC2,
+        ).pack(fill="x")
+        entry = ctk.CTkEntry(
+            wrap, height=34, font=ctk.CTkFont(size=13),
+            fg_color=DSG_SURF_SUB, border_color=DSG_BORDER_CTRL,
+            text_color=DSG_TEXT,
+        )
+        entry.pack(fill="x", pady=(2, 0))
+        return entry
+
+    def _apply_dates(self, kind):
+        d1, d2 = report_date_range(kind)
+        for entry, value in ((self._from_e, d1), (self._to_e, d2)):
+            entry.delete(0, "end")
+            entry.insert(0, value.isoformat())
+
+    def _on_type_changed(self, kind):
+        self._kind.set(kind)
+        self._apply_dates(kind)
+        if kind == "Diario":
+            self._dates_frame.pack_forget()
+        else:
+            self._dates_frame.pack(fill="x", pady=(10, 0))
+
+    def _parse_dates(self):
+        d1 = datetime.strptime(self._from_e.get().strip(), "%Y-%m-%d").date()
+        d2 = datetime.strptime(self._to_e.get().strip(), "%Y-%m-%d").date()
+        if d1 > d2:
+            raise ValueError("La fecha 'Desde' no puede ser posterior a 'Hasta'.")
+        return d1, d2
+
+    def _generate(self):
+        kind = self._kind.get()
+        try:
+            d1, d2 = self._parse_dates()
+        except ValueError as e:
+            MessageDialog(self, "Fecha inválida", str(e))
+            return
+
+        initial = f"reporte_{kind.split()[0].lower()}_{d1}_{d2}.pdf"
+        path = filedialog.asksaveasfilename(
+            defaultextension=".pdf",
+            filetypes=[("PDF", "*.pdf")],
+            initialfile=initial,
+        )
+        if not path:
+            return
+
+        wh_id = self._view._warehouse_id()
+        wh_name = self._view._warehouse_name()
+        user = self._view.current_user.get("username", "")
+        d1s, d2s = d1.isoformat(), d2.isoformat()
+
+        self._generate_btn.configure(state="disabled", text="Generando…")
+        self._status.configure(text="")
+        self.update_idletasks()
+        try:
+            title = self._build_pdf(kind, path, d1, d2, d1s, d2s, wh_id, wh_name, user)
+        except Exception as e:
+            MessageDialog(self, "Error", f"No se pudo generar el PDF:\n{e}")
+            return
+        finally:
+            self._generate_btn.configure(state="normal", text="Generar PDF")
+
+        errors = self._send(path, title, d1, d2)
+        msg = f"Reporte PDF generado en:\n{path}"
+        if errors:
+            msg += "\n\nNo se pudo enviar:\n" + "\n".join(errors)
+        MessageDialog(self._view, "Éxito" if not errors else "Aviso", msg)
+        self.destroy()
+
+    def _build_pdf(self, kind, path, d1, d2, d1s, d2s, wh_id, wh_name, user):
+        if kind in ("Diario", "Semanal", "Mensual"):
+            rows = get_movements_flat(
+                warehouse_id=wh_id, date_from=d1s, date_to=d2s
+            )
+            export_movements(
+                path, movements=rows, warehouse_name=wh_name,
+                filters_text=(
+                    f"Período {kind}: {d1:%d/%m/%Y} a {d2:%d/%m/%Y}"
+                ),
+                generated_by=user,
+            )
+            return f"Reporte {kind}"
+
+        ranking = get_product_movement_ranking(
+            d1s, d2s, warehouse_id=wh_id
+        )
+        top, bottom = split_ranking(ranking)
+        if kind == "Por producto (ranking)":
+            export_product_ranking(path, top, bottom, d1s, d2s, wh_name)
+            return "Reporte por producto"
+
+        counts = get_movement_counts(
+            date_from=d1s, date_to=d2s, warehouse_id=wh_id
+        )
+        summary = [
+            ("Entradas", counts["entrada"]),
+            ("Salidas", counts["salida"]),
+            ("Devoluciones", counts["devolucion"]),
+            ("Asignaciones", counts["asignacion"]),
+            ("Eliminaciones", counts["eliminacion"] + counts["eliminacion_grupo"]),
+            ("Modificaciones", counts["modificacion"]),
+        ]
+        export_critical_closing(
+            path, summary, top, bottom, d1s, d2s, wh_name
+        )
+        return "Reporte crítico de cierre"
+
+    def _send(self, path, title, d1, d2):
+        subject = f"DigiCable · {title} ({d1:%d/%m/%Y} - {d2:%d/%m/%Y})"
+        errors = []
+        if self._email_var.get():
+            try:
+                from core.email_report import send_report_email
+
+                send_report_email(path, subject, "Reporte adjunto.")
+            except Exception as e:
+                errors.append(f"Correo: {e}")
+        if self._telegram_var.get():
+            try:
+                from core.telegram_report import send_report_telegram
+
+                send_report_telegram(path, subject)
+            except Exception as e:
+                errors.append(f"Telegram: {e}")
+        return errors
 
 
 class MovementsView(ctk.CTkFrame):
@@ -215,6 +512,13 @@ class MovementsView(ctk.CTkFrame):
 
         acc = ctk.CTkFrame(title_row, fg_color=DSG_BG)
         acc.pack(side="right")
+        ctk.CTkButton(
+            acc, text="📊  Reportes", font=self._fonts["btn_sec"],
+            fg_color=DSG_SURF, hover_color=DSG_ROW_HOVER,
+            border_color=DSG_BORDER_CTRL, border_width=1,
+            text_color=DSG_TEXT_BODY, corner_radius=9, height=36,
+            command=self._open_reports,
+        ).pack(side="left", padx=(0, 10))
         self._export_btn = ctk.CTkButton(
             acc, text="↓  Exportar PDF", font=self._fonts["btn_sec"],
             fg_color=DSG_SURF, hover_color=DSG_ROW_HOVER,
@@ -954,6 +1258,9 @@ class MovementsView(ctk.CTkFrame):
             if w["id"] == self.app.current_warehouse_id:
                 return w["name"]
         return ""
+
+    def _open_reports(self):
+        _ReportsDialog(self, self)
 
     def _export(self):
         wh = self._warehouse_id()

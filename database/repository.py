@@ -1010,9 +1010,10 @@ JOIN users u ON m.user_id = u.id
 """
 
 
-def _movement_filters(search="", movement_types=None, warehouse_id=None):
+def _movement_filters(search="", movement_types=None, warehouse_id=None,
+                      date_from=None, date_to=None):
     """Construye el WHERE (y params) común: búsqueda sobre producto/empleado/notas,
-    lista de tipos reales y almacén."""
+    lista de tipos reales, almacén y rango de fechas ('YYYY-MM-DD')."""
     clauses = []
     params = []
     if search:
@@ -1030,6 +1031,12 @@ def _movement_filters(search="", movement_types=None, warehouse_id=None):
     if warehouse_id is not None:
         clauses.append("m.warehouse_id = ?")
         params.append(warehouse_id)
+    if date_from:
+        clauses.append("date(m.timestamp) >= date(?)")
+        params.append(date_from)
+    if date_to:
+        clauses.append("date(m.timestamp) <= date(?)")
+        params.append(date_to)
     return " AND ".join(clauses) if clauses else "1=1", params
 
 
@@ -1143,11 +1150,14 @@ def _format_quantity_summary(item_count, unit_totals, quantity):
     return " · ".join(f"{tot} {unit}" for unit, tot in unit_totals.items())
 
 
-def get_movements_flat(warehouse_id=None, search="", movement_types=None, limit=1000000):
+def get_movements_flat(warehouse_id=None, search="", movement_types=None,
+                       limit=1000000, date_from=None, date_to=None):
     """Todos los movimientos filtrados (sin paginar), p. ej. para exportar."""
     conn = get_connection()
     try:
-        where, params = _movement_filters(search, movement_types, warehouse_id)
+        where, params = _movement_filters(
+            search, movement_types, warehouse_id, date_from, date_to
+        )
         rows = conn.execute(
             _MOVEMENTS_SELECT + f" WHERE {where} ORDER BY m.id DESC LIMIT ?",
             params + [limit],
@@ -1155,6 +1165,41 @@ def get_movements_flat(warehouse_id=None, search="", movement_types=None, limit=
         cleaned = [_clean_row_product(r) for r in rows]
         _attach_item_summaries(conn, cleaned)
         return cleaned
+    finally:
+        conn.close()
+
+
+def get_product_movement_ranking(date_from, date_to, warehouse_id=None, limit=10):
+    """Ranking de productos por movimiento en un período.
+
+    Agrupa `movement_items` + `movements` por (nombre, marca) y separa las
+    entradas (entrada/devolucion) de las salidas (salida/asignacion). Devuelve
+    las filas ordenadas de mayor a menor movimiento total.
+    """
+    conn = get_connection()
+    try:
+        where = "date(m.timestamp) BETWEEN date(?) AND date(?)"
+        params = [date_from, date_to]
+        if warehouse_id is not None:
+            where += " AND m.warehouse_id = ?"
+            params.append(warehouse_id)
+        rows = conn.execute(
+            f"""
+            SELECT mi.name, COALESCE(mi.brand, '') AS brand,
+                   SUM(CASE WHEN m.type IN ('entrada','devolucion')
+                            THEN mi.qty ELSE 0 END) AS entradas,
+                   SUM(CASE WHEN m.type IN ('salida','asignacion')
+                            THEN mi.qty ELSE 0 END) AS salidas,
+                   SUM(mi.qty) AS total
+            FROM movement_items mi
+            JOIN movements m ON mi.movement_id = m.id
+            WHERE {where}
+            GROUP BY mi.name, mi.brand
+            ORDER BY total DESC, mi.name ASC
+            """,
+            params,
+        ).fetchall()
+        return [dict(r) for r in rows]
     finally:
         conn.close()
 
@@ -2000,11 +2045,23 @@ def create_compound_movement(type_, user_id, items, notes="", warehouse_id=None,
         conn.close()
 
 
-def get_movement_counts():
-    """Obtiene estadísticas de movimientos"""
+def get_movement_counts(date_from=None, date_to=None, warehouse_id=None):
+    """Obtiene estadísticas de movimientos, opcionalmente por rango/almacén."""
     conn = get_connection()
     try:
-        row = conn.execute("""
+        clauses = []
+        params = []
+        if date_from:
+            clauses.append("date(timestamp) >= date(?)")
+            params.append(date_from)
+        if date_to:
+            clauses.append("date(timestamp) <= date(?)")
+            params.append(date_to)
+        if warehouse_id is not None:
+            clauses.append("warehouse_id = ?")
+            params.append(warehouse_id)
+        where = " AND ".join(clauses) if clauses else "1=1"
+        row = conn.execute(f"""
             SELECT
                 COALESCE(SUM(type='entrada'), 0) entrada,
                 COALESCE(SUM(type='salida'), 0) salida,
@@ -2014,7 +2071,8 @@ def get_movement_counts():
                 COALESCE(SUM(type='eliminacion_grupo'), 0) eliminacion_grupo,
                 COALESCE(SUM(type='modificacion'), 0) modificacion
             FROM movements
-        """).fetchone()
+            WHERE {where}
+        """, params).fetchone()
         return dict(row)
     finally:
         conn.close()

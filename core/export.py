@@ -151,3 +151,106 @@ def export_inventory(filepath, products=None, *, warehouse_name=""):
         rows=rows,
         total_label=f"Total: {len(rows)} modelo(s).",
     )
+
+
+_RANKING_HEADERS = ["Producto", "Marca", "Entradas", "Salidas", "Total"]
+_RANKING_WIDTHS = [190, 110, 75, 75, 75]
+
+
+def _fmt_date(iso):
+    try:
+        return datetime.strptime(iso, "%Y-%m-%d").strftime("%d/%m/%Y")
+    except (ValueError, TypeError):
+        return str(iso)
+
+
+def _period_label(date_from, date_to):
+    return f"Período: {_fmt_date(date_from)} a {_fmt_date(date_to)}"
+
+
+def _ranking_rows(rows):
+    out = []
+    for raw in rows:
+        r = raw if isinstance(raw, dict) else dict(raw)
+        out.append([
+            r.get("name") or "—",
+            r.get("brand") or "—",
+            r.get("entradas", 0),
+            r.get("salidas", 0),
+            r.get("total", 0),
+        ])
+    return out
+
+
+def export_product_ranking(filepath, top_rows, bottom_rows, date_from, date_to,
+                           warehouse_name=""):
+    """Reporte de productos más y menos movidos en un período."""
+    rows = []
+    top = _ranking_rows(top_rows)
+    bottom = _ranking_rows(bottom_rows)
+    if top:
+        rows.append(["— Productos más movidos —", "", "", "", ""])
+        rows.extend(top)
+    if bottom:
+        rows.append(["— Productos menos movidos —", "", "", "", ""])
+        rows.extend(bottom)
+    if not rows:
+        rows = [["Sin movimientos en el período.", "", "", "", ""]]
+
+    subtitle = [f"Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}"]
+    if warehouse_name:
+        subtitle.append(f"Almacén: {warehouse_name}")
+    subtitle.append(_period_label(date_from, date_to))
+
+    _build_pdf(
+        filepath=filepath,
+        title="Reporte por Producto",
+        subtitle=subtitle,
+        headers=_RANKING_HEADERS,
+        col_widths=_RANKING_WIDTHS,
+        rows=rows,
+        total_label=f"Total: {len(top) + len(bottom)} producto(s).",
+    )
+
+
+def export_critical_closing(filepath, summary_rows, top_rows, bottom_rows,
+                            date_from, date_to, warehouse_name=""):
+    """Reporte crítico de cierre: resumen del período + ranking de productos."""
+    headers = ["Métrica", "Total"]
+    widths = [220, 120]
+    rows = []
+    for raw in summary_rows:
+        if isinstance(raw, dict):
+            rows.append([raw.get("label", "—"), raw.get("value", 0)])
+        else:
+            rows.append([raw[0], raw[1]])
+
+    subtitle = [f"Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}"]
+    if warehouse_name:
+        subtitle.append(f"Almacén: {warehouse_name}")
+    subtitle.append(_period_label(date_from, date_to))
+
+    sections = []
+    for title, data in (
+        ("Productos más movidos", top_rows),
+        ("Productos menos movidos", bottom_rows),
+    ):
+        ranked = _ranking_rows(data)
+        if ranked:
+            sections.append({
+                "title": title,
+                "headers": _RANKING_HEADERS,
+                "col_widths": _RANKING_WIDTHS,
+                "rows": ranked,
+            })
+
+    _build_pdf(
+        filepath=filepath,
+        title="Reporte Crítico de Cierre",
+        subtitle=subtitle,
+        headers=headers,
+        col_widths=widths,
+        rows=rows,
+        total_label=_period_label(date_from, date_to),
+        extra_sections=sections,
+    )

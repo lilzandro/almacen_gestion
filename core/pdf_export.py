@@ -121,6 +121,7 @@ def build_pdf(
     rows,
     total_label=None,
     landscape_mode=False,
+    extra_sections=None,
 ):
     page_size = landscape(A4) if landscape_mode else A4
     doc = BaseDocTemplate(
@@ -168,6 +169,13 @@ def build_pdf(
         leading=9,
         textColor=GRIS_TEXTO,
     )
+    section_title_style = ParagraphStyle(
+        "section",
+        fontName="Helvetica-Bold",
+        fontSize=10,
+        leading=12,
+        textColor=AZUL_NOCHE,
+    )
 
     data = [[Paragraph(escape(str(h)), head_style) for h in headers]]
     for row in rows:
@@ -195,5 +203,26 @@ def build_pdf(
     if total_label:
         story.append(Spacer(1, 4 * mm))
         story.append(Paragraph(total_label, cell_style))
+
+    for section in extra_sections or []:
+        story.append(Spacer(1, 7 * mm))
+        story.append(Paragraph(escape(str(section["title"])), section_title_style))
+        story.append(Spacer(1, 3 * mm))
+        sec_data = [
+            [Paragraph(escape(str(h)), head_style) for h in section["headers"]]
+        ]
+        for row in section["rows"]:
+            sec_data.append([
+                Paragraph(escape(str(v)), cell_style) if isinstance(v, str) else v
+                for v in row
+            ])
+        sec_table = LongTable(
+            sec_data, colWidths=section["col_widths"], repeatRows=1
+        )
+        sec_table.setStyle(TableStyle(style))
+        story.append(sec_table)
+        if section.get("total_label"):
+            story.append(Spacer(1, 3 * mm))
+            story.append(Paragraph(section["total_label"], cell_style))
 
     doc.build(story, canvasmaker=_NumberedCanvas)
