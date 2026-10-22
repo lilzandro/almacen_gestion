@@ -254,3 +254,53 @@ def test_send_report_telegram_envia_documento(tmp_path, monkeypatch):
     assert b'filename="reporte.pdf"' in captured["data"]
     assert pdf.read_bytes() in captured["data"]
     assert captured["timeout"] == 30
+
+
+def test_export_single_movement_genera_pdf_simple(tmp_path):
+    from core.export import export_single_movement
+
+    detail = {
+        "id": 7,
+        "type": "salida",
+        "timestamp": "2026-05-02 09:00:00",
+        "quantity": 3,
+        "unit": "und",
+        "product": "Router",
+        "brand": "TPLink",
+        "employee": "Ana",
+        "cargo": "Tecnica",
+        "registered_by": "admin",
+        "warehouse": "Principal",
+        "notes": "prueba",
+        "items": [],
+    }
+    path = tmp_path / "movimiento.pdf"
+    export_single_movement(str(path), detail)
+    assert path.exists() and path.stat().st_size > 1000
+
+
+def test_export_single_movement_con_items_y_textos_dados(tmp_path):
+    from core.export import export_single_movement
+
+    detail = {
+        "id": 12,
+        "type": "entrada",
+        "timestamp": "2026-05-03 11:30:00",
+        "employee": "-",
+        "registered_by": "admin",
+        "notes": "",
+        "items": [
+            {"name": "Router", "brand": "TPLink", "qty": 5, "unit": "und",
+             "seriales": "SN-1, SN-2"},
+            {"name": "Cable", "brand": "Gen", "qty": 10, "unit": "m",
+             "seriales": ""},
+        ],
+    }
+    path = tmp_path / "movimiento_items.pdf"
+    export_single_movement(
+        str(path), detail,
+        quantity_text="5 und - 10 m",
+        employee_text="-",
+        warehouse_name="Secundario",
+    )
+    assert path.exists() and path.stat().st_size > 1000

@@ -1,6 +1,7 @@
 import customtkinter as ctk
 import queue
 import threading
+from tkinter import filedialog
 from ui.colors import *
 
 try:
@@ -13,6 +14,7 @@ from ui.dashboard_widgets import (
     setup_dashboard_movements_style,
 )
 from database.repository import get_dashboard_stats, get_movement_detail
+from ui.widgets import MessageDialog
 
 
 class DashboardView(ctk.CTkFrame):
@@ -392,6 +394,9 @@ class DashboardView(ctk.CTkFrame):
         emp = detail.get("employee")
         if emp in ("-", "", None):
             emp = None
+        employee_text = (
+            f"{emp} ({detail['cargo']})" if emp and detail.get("cargo") else emp
+        ) or "—"
         _meta_row("Empleado", emp)
         if detail.get("cargo"):
             _meta_row("Cargo", detail["cargo"])
@@ -404,8 +409,43 @@ class DashboardView(ctk.CTkFrame):
 
         _bind_wheel(body)
 
+        def _print_detail():
+            path = filedialog.asksaveasfilename(
+                defaultextension=".pdf", filetypes=[("PDF", "*.pdf")],
+                initialfile=f"movimiento_{detail.get('id', '')}.pdf",
+            )
+            if not path:
+                return
+            from core.export import export_single_movement
+            try:
+                export_single_movement(
+                    path, detail, employee_text=employee_text
+                )
+            except Exception as e:
+                MessageDialog(
+                    d, "Error", f"No se pudo generar el PDF:\n{e}", is_error=True
+                )
+                return
+            MessageDialog(d, "Éxito", f"Reporte generado en:\n{path}")
+
+        actions = ctk.CTkFrame(d, fg_color="transparent")
+        actions.pack(fill="x", padx=20, pady=(0, 16))
+
         ctk.CTkButton(
-            d,
+            actions,
+            text="🖨 Imprimir",
+            height=42,
+            font=ctk.CTkFont(size=15, weight="bold"),
+            fg_color="white",
+            hover_color=DASHBOARD_CARD_BORDER_SEC,
+            border_width=1,
+            border_color=DASHBOARD_CARD_BORDER_SEC,
+            text_color=AZUL_MARINO,
+            command=_print_detail,
+        ).pack(side="left")
+
+        ctk.CTkButton(
+            actions,
             text="✕ Cerrar",
             height=42,
             font=ctk.CTkFont(size=15, weight="bold"),
@@ -413,7 +453,7 @@ class DashboardView(ctk.CTkFrame):
             hover_color=HOVER_NARANJA_INT,
             text_color="white",
             command=d.destroy,
-        ).pack(padx=20, pady=(0, 16))
+        ).pack(side="right")
 
         # Centrar sobre la ventana principal usando tamaño conocido
         dw, dh = 720, 780

@@ -254,3 +254,102 @@ def export_critical_closing(filepath, summary_rows, top_rows, bottom_rows,
         total_label=_period_label(date_from, date_to),
         extra_sections=sections,
     )
+
+
+def _movement_quantity_text(detail):
+    """Cantidades agrupadas por unidad (igual que el detalle en pantalla)."""
+    items = detail.get("items") or []
+    if items:
+        totals = {}
+        order = []
+        for it in items:
+            unit = it.get("unit") or "und"
+            qty = it.get("qty")
+            try:
+                qty = int(qty) if qty not in (None, "") else 0
+            except (TypeError, ValueError):
+                qty = 0
+            totals[unit] = totals.get(unit, 0) + qty
+            if unit not in order:
+                order.append(unit)
+        if order:
+            return " · ".join(f"{totals[u]} {u}" for u in order)
+    qty = detail.get("quantity")
+    unit = detail.get("unit") or ""
+    text = str(qty) if qty is not None else "—"
+    return f"{text} {unit}".strip() if unit else text
+
+
+def _movement_employee_text(detail):
+    emp = detail.get("employee")
+    cargo = detail.get("cargo") or ""
+    if not emp or emp == "-":
+        return "—"
+    return f"{emp} ({cargo})" if cargo else emp
+
+
+def export_single_movement(
+    filepath,
+    detail,
+    *,
+    quantity_text=None,
+    employee_text=None,
+    warehouse_name="",
+):
+    """Reporte PDF de un solo movimiento (detalle completo).
+
+    `quantity_text` y `employee_text` se pueden pasar ya calculados (el diálogo
+    de detalle los tiene en pantalla); si no, se derivan del mismo `detail`.
+    """
+    detail = dict(detail)
+    items = detail.get("items") or []
+    q_label = "Cantidades" if len(items) > 1 else "Cantidad"
+    tlabel = _TIPO_LABEL.get(detail.get("type", ""), detail.get("type") or "—")
+
+    rows = [
+        ["Movimiento", f"#{detail.get('id', '—')}"],
+        ["Tipo", tlabel],
+        ["Fecha/hora", _fmt_ts(detail.get("timestamp"))],
+        [q_label, quantity_text or _movement_quantity_text(detail)],
+        ["Empleado", employee_text or _movement_employee_text(detail)],
+        ["Registrado por", detail.get("registered_by") or "—"],
+        ["Almacén", detail.get("warehouse") or warehouse_name or "—"],
+    ]
+    if not items:
+        product = detail.get("product") or "—"
+        if detail.get("brand"):
+            product = f"{product} · {detail['brand']}"
+        rows.append(["Producto", product])
+    rows.append(["Notas", detail.get("notes") or "Sin notas"])
+
+    sections = []
+    if items:
+        sections.append({
+            "title": "Productos",
+            "headers": ["Producto", "Marca", "Cant.", "Unidad", "Serial(es)"],
+            "col_widths": [150, 90, 50, 60, 150],
+            "rows": [
+                [
+                    it.get("name") or "—",
+                    it.get("brand") or "—",
+                    it.get("qty"),
+                    it.get("unit") or "",
+                    it.get("seriales") or "—",
+                ]
+                for it in items
+            ],
+        })
+
+    subtitle = [f"Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}"]
+    if warehouse_name:
+        subtitle.append(f"Almacén: {warehouse_name}")
+
+    _build_pdf(
+        filepath=filepath,
+        title=f"Movimiento #{detail.get('id', '—')}",
+        subtitle=subtitle,
+        headers=["Campo", "Valor"],
+        col_widths=[150, 350],
+        rows=rows,
+        extra_sections=sections,
+    )

@@ -1483,6 +1483,13 @@ class _MovementInfoDialog(BaseDialog):
             command=self._copy,
         ).pack(side="left", padx=(8, 8), pady=12)
         ctk.CTkButton(
+            foot, text="🖨  Imprimir", font=ctk.CTkFont(size=15),
+            fg_color=DSG_SURF, hover_color=DSG_ROW_HOVER,
+            border_width=1, border_color=DSG_BORDER_CTRL,
+            text_color=DSG_TEXT_SEC, corner_radius=9, height=40,
+            command=self._print,
+        ).pack(side="left", padx=(8, 8), pady=12)
+        ctk.CTkButton(
             foot, text="Cerrar", font=ctk.CTkFont(size=15, weight="bold"),
             fg_color=DSG_BRAND, hover_color=DSG_BRAND_DARK,
             text_color="white", corner_radius=9, height=40,
@@ -1623,6 +1630,29 @@ class _MovementInfoDialog(BaseDialog):
             self.clipboard_append("\n".join(lines))
         except Exception:
             pass
+
+    def _print(self):
+        """Genera un PDF con el detalle completo de este movimiento."""
+        d = self._detail
+        path = filedialog.asksaveasfilename(
+            defaultextension=".pdf", filetypes=[("PDF", "*.pdf")],
+            initialfile=f"movimiento_{d['id']}.pdf",
+        )
+        if not path:
+            return
+        from core.export import export_single_movement
+        try:
+            export_single_movement(
+                path, d,
+                quantity_text=self._quantity_text(d),
+                employee_text=self._employee_text(d),
+            )
+        except Exception as e:
+            MessageDialog(
+                self, "Error", f"No se pudo generar el PDF:\n{e}", is_error=True
+            )
+            return
+        MessageDialog(self, "Éxito", f"Reporte generado en:\n{path}")
 
     def _edit(self):
         self.destroy()
