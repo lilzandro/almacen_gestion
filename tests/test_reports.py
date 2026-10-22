@@ -304,3 +304,35 @@ def test_export_single_movement_con_items_y_textos_dados(tmp_path):
         warehouse_name="Secundario",
     )
     assert path.exists() and path.stat().st_size > 1000
+
+
+def test_export_single_movement_sin_textos_deriva_cantidad_y_productos(
+    tmp_path, monkeypatch
+):
+    """Camino del popup del Dashboard: no pasa quantity_text."""
+    import core.export as export
+
+    captured = {}
+    monkeypatch.setattr(export, "_build_pdf", lambda **kw: captured.update(kw))
+
+    detail = {
+        "id": 21,
+        "type": "entrada",
+        "timestamp": "2026-05-04 08:00:00",
+        "items": [
+            {"name": "Router", "brand": "TPLink", "qty": 5, "unit": "und",
+             "seriales": "SN-1"},
+            {"name": "Cable", "brand": "Gen", "qty": 10, "unit": "m",
+             "seriales": ""},
+        ],
+    }
+    export.export_single_movement(str(tmp_path / "x.pdf"), detail)
+
+    rows = {row[0]: row[1] for row in captured["rows"]}
+    assert rows["Cantidades"] == "5 und · 10 m"
+    assert rows["Almacén"] == "—"
+    assert "Producto" not in rows  # compuesto: los ítems van en su sección
+    section = captured["extra_sections"][0]
+    assert section["title"] == "Productos"
+    assert [r[0] for r in section["rows"]] == ["Router", "Cable"]
+    assert section["rows"][0][4] == "SN-1"
