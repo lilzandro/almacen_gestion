@@ -122,6 +122,7 @@ def build_pdf(
     total_label=None,
     landscape_mode=False,
     extra_sections=None,
+    footer_lines=None,
 ):
     page_size = landscape(A4) if landscape_mode else A4
     doc = BaseDocTemplate(
@@ -224,5 +225,9 @@ def build_pdf(
         if section.get("total_label"):
             story.append(Spacer(1, 3 * mm))
             story.append(Paragraph(section["total_label"], cell_style))
+
+    for line in footer_lines or []:
+        story.append(Spacer(1, 5 * mm))
+        story.append(Paragraph(escape(str(line)), cell_style))
 
     doc.build(story, canvasmaker=_NumberedCanvas)

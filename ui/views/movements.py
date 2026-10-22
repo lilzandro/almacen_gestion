@@ -54,6 +54,19 @@ def report_date_range(kind, today=None):
     return today.replace(day=1), today
 
 
+def receipt_signature_for(movement_type):
+    """(título del comprobante, ¿lleva firma?) o None si el tipo no lleva.
+
+    Salida → comprobante de entrega con firma de quien recibe.
+    Devolución → checklist de lo recibido, sin firma.
+    """
+    if movement_type == "salida":
+        return "Comprobante de Entrega", True
+    if movement_type == "devolucion":
+        return "Comprobante de Devolución — Verificar lo recibido", False
+    return None
+
+
 def split_ranking(rows, limit=10):
     """Separa el ranking en más y menos movidos sin repetir productos."""
     top = list(rows[:limit])
@@ -2300,7 +2313,7 @@ class _MovementDialog(BaseDialog):
                         "Ingresa cantidades válidas para al menos un producto.",
                     )
                     return
-                create_compound_movement(
+                movement_id = create_compound_movement(
                     "salida", self.current_user["id"], items, notes,
                     warehouse_id=self.warehouse_id,
                     employee_id=selected_employees[0],
@@ -2360,7 +2373,7 @@ class _MovementDialog(BaseDialog):
                     MessageDialog(self, "Aviso", "No hay nada para devolver.")
                     return
 
-                create_compound_movement(
+                movement_id = create_compound_movement(
                     "devolucion", self.current_user["id"], items, notes,
                     warehouse_id=self.warehouse_id,
                 )
@@ -2374,8 +2387,60 @@ class _MovementDialog(BaseDialog):
             )
             return
 
+        if receipt_signature_for(type_):
+            offer = ConfirmDialog(
+                self, "Movimiento registrado",
+                "¿Imprimir el comprobante ahora?"
+                + (" (para entregar a quien recibe)" if type_ == "salida"
+                   else " (para chequear lo que entró)"),
+            )
+            self.wait_window(offer)
+            if offer.result:
+                self._print_receipt(movement_id, type_)
+
         self.on_save()
         self.destroy()
+
+    def _print_receipt(self, movement_id, type_):
+        """Genera el comprobante PDF del movimiento recién registrado."""
+        receipt = receipt_signature_for(type_)
+        if not receipt:
+            return
+        doc_title, with_signature = receipt
+        path = filedialog.asksaveasfilename(
+            defaultextension=".pdf", filetypes=[("PDF", "*.pdf")],
+            initialfile=f"comprobante_{type_}_{movement_id}.pdf",
+        )
+        if not path:
+            return
+        detail = get_movement_detail(movement_id)
+        if not detail:
+            self._notify(
+                "Error",
+                "No se pudo leer el movimiento recién registrado.",
+                is_error=True,
+            )
+            return
+        from core.export import export_single_movement
+        try:
+            export_single_movement(
+                path, detail,
+                quantity_text=_MovementInfoDialog._quantity_text(detail),
+                employee_text=_MovementInfoDialog._employee_text(detail),
+                doc_title=doc_title,
+                with_signature=with_signature,
+            )
+        except Exception as e:
+            self._notify(
+                "Error", f"No se pudo generar el comprobante:\n{e}", is_error=True
+            )
+            return
+        self._notify("Éxito", f"Comprobante generado en:\n{path}")
+
+    def _notify(self, title, message, is_error=False):
+        """Muestra un aviso y espera a que se cierre (sobrevive al destroy)."""
+        msg = MessageDialog(self, title, message, is_error=is_error)
+        self.wait_window(msg)
 
 
 class _MovementEditDialog(BaseDialog):

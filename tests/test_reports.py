@@ -336,3 +336,78 @@ def test_export_single_movement_sin_textos_deriva_cantidad_y_productos(
     assert section["title"] == "Productos"
     assert [r[0] for r in section["rows"]] == ["Router", "Cable"]
     assert section["rows"][0][4] == "SN-1"
+
+
+def test_build_pdf_acepta_footer_lines(tmp_path):
+    from core.pdf_export import build_pdf
+
+    path = tmp_path / "firma.pdf"
+    build_pdf(
+        filepath=str(path),
+        title="Comprobante",
+        subtitle=["Generado: prueba"],
+        headers=["Campo", "Valor"],
+        col_widths=[150, 350],
+        rows=[["Movimiento", "#1"]],
+        footer_lines=["Firma de quien entrega: ____"],
+    )
+    assert path.exists() and path.stat().st_size > 1000
+
+
+def test_export_single_movement_comprobante_con_firma(tmp_path, monkeypatch):
+    import core.export as export
+
+    captured = {}
+    monkeypatch.setattr(export, "_build_pdf", lambda **kw: captured.update(kw))
+
+    detail = {
+        "id": 9,
+        "type": "salida",
+        "timestamp": "2026-05-04 08:00:00",
+        "items": [
+            {"name": "Router", "brand": "TPLink", "qty": 2, "unit": "und",
+             "seriales": "SN-1, SN-2"},
+        ],
+        "employee": "Ana",
+        "cargo": "Tecnica",
+    }
+    export.export_single_movement(
+        str(tmp_path / "comprobante.pdf"),
+        detail,
+        doc_title="Comprobante de Entrega",
+        with_signature=True,
+    )
+
+    assert captured["title"] == "Comprobante de Entrega"
+    footer = captured["footer_lines"]
+    assert any("Firma de quien entrega" in line for line in footer)
+    assert any("Firma de quien recibe" in line for line in footer)
+
+
+def test_export_single_movement_sin_firma_no_agrega_pie(tmp_path, monkeypatch):
+    import core.export as export
+
+    captured = {}
+    monkeypatch.setattr(export, "_build_pdf", lambda **kw: captured.update(kw))
+
+    detail = {"id": 10, "type": "devolucion", "timestamp": "2026-05-04 09:00:00"}
+    export.export_single_movement(
+        str(tmp_path / "devolucion.pdf"),
+        detail,
+        doc_title="Comprobante de Devolución — Verificar lo recibido",
+    )
+
+    assert captured["title"] == "Comprobante de Devolución — Verificar lo recibido"
+    assert captured["footer_lines"] is None
+
+
+def test_receipt_signature_for_solo_salida_y_devolucion():
+    from ui.views.movements import receipt_signature_for
+
+    assert receipt_signature_for("salida") == ("Comprobante de Entrega", True)
+    assert receipt_signature_for("devolucion") == (
+        "Comprobante de Devolución — Verificar lo recibido",
+        False,
+    )
+    assert receipt_signature_for("entrada") is None
+    assert receipt_signature_for("asignacion") is None

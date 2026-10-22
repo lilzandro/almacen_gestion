@@ -295,11 +295,15 @@ def export_single_movement(
     quantity_text=None,
     employee_text=None,
     warehouse_name="",
+    doc_title=None,
+    with_signature=False,
 ):
     """Reporte PDF de un solo movimiento (detalle completo).
 
     `quantity_text` y `employee_text` se pueden pasar ya calculados (el diálogo
     de detalle los tiene en pantalla); si no, se derivan del mismo `detail`.
+    `doc_title` reemplaza el título (p. ej. "Comprobante de Entrega") y
+    `with_signature` agrega las líneas de firma al pie.
     """
     detail = dict(detail)
     items = detail.get("items") or []
@@ -344,12 +348,22 @@ def export_single_movement(
     if warehouse_name:
         subtitle.append(f"Almacén: {warehouse_name}")
 
+    footer = None
+    if with_signature:
+        footer = [
+            "",
+            "Firma de quien entrega: ______________________________",
+            "",
+            "Firma de quien recibe: ______________________________",
+        ]
+
     _build_pdf(
         filepath=filepath,
-        title=f"Movimiento #{detail.get('id', '—')}",
+        title=doc_title or f"Movimiento #{detail.get('id', '—')}",
         subtitle=subtitle,
         headers=["Campo", "Valor"],
         col_widths=[150, 350],
         rows=rows,
         extra_sections=sections,
+        footer_lines=footer,
     )
