@@ -138,6 +138,9 @@ class _ReportsDialog(BaseDialog):
         self.transient(parent)
         self._view = view
         self._kind = ctk.StringVar(value="Diario")
+        self._tipo_filtro = ctk.StringVar(
+            value=getattr(view, "_tipo", None) or "todos"
+        )
         self._build()
         show_centered(self)
         self.bind("<Escape>", lambda e: self.destroy())
@@ -189,6 +192,30 @@ class _ReportsDialog(BaseDialog):
         )
         self._type_menu.pack(fill="x", padx=16)
 
+        self._tipo_frame = ctk.CTkFrame(body, fg_color=DSG_SURF)
+        ctk.CTkLabel(
+            self._tipo_frame, text="Filtrar por tipo de movimiento", anchor="w",
+            font=ctk.CTkFont(size=13, weight="bold"), text_color=DSG_TEXT,
+        ).pack(fill="x", padx=16, pady=(12, 4))
+        self._tipo_labels = {"todos": "Todos"}
+        self._tipo_labels.update(
+            {k: lb for k, lb, _ in MovementsView.CHIPS if k != "todos"}
+        )
+        self._tipo_keys_by_label = {v: k for k, v in self._tipo_labels.items()}
+        self._tipo_menu = ctk.CTkOptionMenu(
+            self._tipo_frame, values=list(self._tipo_labels.values()),
+            font=ctk.CTkFont(size=13), height=36,
+            fg_color=DSG_BRAND, button_color=DSG_BRAND,
+            button_hover_color=DSG_PRIMARY_HOVER,
+            dropdown_font=ctk.CTkFont(size=13),
+            command=lambda label: self._tipo_filtro.set(
+                self._tipo_keys_by_label[label]
+            ),
+        )
+        self._tipo_menu.set(self._tipo_labels[self._tipo_filtro.get()])
+        self._tipo_menu.pack(fill="x", padx=16)
+        self._tipo_frame.pack(fill="x")
+
         self._dates_frame = ctk.CTkFrame(body, fg_color=DSG_SURF)
         dates = ctk.CTkFrame(self._dates_frame, fg_color=DSG_SURF)
         dates.pack(fill="x")
@@ -207,10 +234,11 @@ class _ReportsDialog(BaseDialog):
                 command=lambda k=kind: self._apply_dates(k),
             ).pack(side="left", padx=(0, 6))
 
-        ctk.CTkLabel(
+        self._envio_label = ctk.CTkLabel(
             body, text="Envío (opcional)", anchor="w",
             font=ctk.CTkFont(size=13, weight="bold"), text_color=DSG_TEXT,
-        ).pack(fill="x", padx=16, pady=(16, 2))
+        )
+        self._envio_label.pack(fill="x", padx=16, pady=(16, 2))
 
         email_ok = all(os.environ.get(k) for k in (
             "SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD", "REPORT_EMAIL_TO"
@@ -278,10 +306,18 @@ class _ReportsDialog(BaseDialog):
     def _on_type_changed(self, kind):
         self._kind.set(kind)
         self._apply_dates(kind)
+        # Tipo y fechas van antes de "Envío (opcional)"; el pack tardío de
+        # _dates_frame los mandaba al final del diálogo.
+        if kind in ("Diario", "Semanal", "Mensual"):
+            self._tipo_frame.pack(fill="x", before=self._envio_label)
+        else:
+            self._tipo_frame.pack_forget()
         if kind == "Diario":
             self._dates_frame.pack_forget()
         else:
-            self._dates_frame.pack(fill="x", pady=(10, 0))
+            self._dates_frame.pack(
+                fill="x", pady=(10, 0), before=self._envio_label
+            )
 
     def _parse_dates(self):
         d1 = datetime.strptime(self._from_e.get().strip(), "%Y-%m-%d").date()
@@ -332,13 +368,23 @@ class _ReportsDialog(BaseDialog):
 
     def _build_pdf(self, kind, path, d1, d2, d1s, d2s, wh_id, wh_name, user):
         if kind in ("Diario", "Semanal", "Mensual"):
+            tipo_key = self._tipo_filtro.get()
+            movement_types = (
+                None if tipo_key == "todos"
+                else MovementsView.TYPE_ALIASES.get(tipo_key, [tipo_key])
+            )
             rows = get_movements_flat(
-                warehouse_id=wh_id, date_from=d1s, date_to=d2s
+                warehouse_id=wh_id, date_from=d1s, date_to=d2s,
+                movement_types=movement_types,
+            )
+            filtro_txt = (
+                f" · Tipo: {self._tipo_labels[tipo_key]}"
+                if tipo_key != "todos" else ""
             )
             export_movements(
                 path, movements=rows, warehouse_name=wh_name,
                 filters_text=(
-                    f"Período {kind}: {d1:%d/%m/%Y} a {d2:%d/%m/%Y}"
+                    f"Período {kind}: {d1:%d/%m/%Y} a {d2:%d/%m/%Y}{filtro_txt}"
                 ),
                 generated_by=user,
             )

@@ -248,3 +248,78 @@ def test_on_tree_select_resalta_todas_las_filas_seleccionadas():
     assert tagged["1"] == "sel"
     assert tagged["3"] == "sel"
     assert tagged["2"] != "sel"
+
+
+@pytest.mark.skipif(
+    not os.environ.get("DISPLAY"), reason="requiere un servidor X (Tkinter)"
+)
+def test_reportes_arranca_con_el_filtro_de_tipo_activo_en_la_lista():
+    from ui.views.movements import _ReportsDialog
+
+    class _View:
+        _tipo = "salida"
+        current_user = {"username": "admin"}
+
+        def _warehouse_id(self):
+            return None
+
+        def _warehouse_name(self):
+            return ""
+
+    root = tk.Tk()
+    try:
+        dlg = _ReportsDialog(root, _View())
+        assert dlg._tipo_filtro.get() == "salida"
+    finally:
+        root.destroy()
+
+
+@pytest.mark.skipif(
+    not os.environ.get("DISPLAY"), reason="requiere un servidor X (Tkinter)"
+)
+def test_reporte_por_periodo_pasa_el_tipo_filtrado(monkeypatch):
+    from datetime import date
+
+    import ui.views.movements as mv
+
+    capturado = {}
+    monkeypatch.setattr(
+        mv, "get_movements_flat",
+        lambda **kw: capturado.update(consulta=kw) or [],
+    )
+    monkeypatch.setattr(
+        mv, "export_movements",
+        lambda *a, **k: capturado.update(export=k),
+    )
+
+    class _View:
+        _tipo = None
+        current_user = {"username": "admin"}
+
+        def _warehouse_id(self):
+            return None
+
+        def _warehouse_name(self):
+            return ""
+
+    root = tk.Tk()
+    try:
+        dlg = mv._ReportsDialog(root, _View())
+        dlg._tipo_filtro.set("salida")
+        dlg._build_pdf(
+            "Diario", "/tmp/x.pdf", date(2026, 11, 1), date(2026, 11, 1),
+            "2026-11-01", "2026-11-01", None, "", "admin",
+        )
+        assert capturado["consulta"]["movement_types"] == ["salida"]
+        assert "Tipo: Salida" in capturado["export"]["filters_text"]
+
+        dlg._tipo_filtro.set("todos")
+        dlg._build_pdf(
+            "Diario", "/tmp/x.pdf", date(2026, 11, 1), date(2026, 11, 1),
+            "2026-11-01", "2026-11-01", None, "", "admin",
+        )
+        assert capturado["consulta"]["movement_types"] is None
+        assert "Tipo:" not in capturado["export"]["filters_text"]
+    finally:
+        dlg.destroy()
+        root.destroy()
