@@ -490,3 +490,109 @@ def test_on_tree_select_deselecciona_fila_que_sale_de_selection():
     assert tagged["1"] == "sel"
     assert tagged["2"] != "sel"
     assert tagged["3"] != "sel"
+
+
+def test_send_incluye_whatsapp_si_el_checkbox_esta_tildado(monkeypatch):
+    import core.whatsapp_report as whatsapp_report
+    from ui.views import movements as movements_mod
+
+    captured = {}
+    monkeypatch.setattr(
+        whatsapp_report, "send_report_whatsapp",
+        lambda path, caption="": captured.setdefault("called", (path, caption)),
+    )
+
+    class _Dialog:
+        _email_var = type("V", (), {"get": lambda self: False})()
+        _telegram_var = type("V", (), {"get": lambda self: False})()
+        _whatsapp_var = type("V", (), {"get": lambda self: True})()
+
+    import datetime
+    errors = movements_mod._ReportsDialog._send(
+        _Dialog(), "x.pdf", "Reporte", datetime.date(2026, 1, 1),
+        datetime.date(2026, 1, 31),
+    )
+    assert errors == []
+    assert captured["called"][0] == "x.pdf"
+
+
+def test_send_whatsapp_error_no_bloquea_correo_ni_telegram(monkeypatch):
+    import core.email_report as email_report
+    import core.telegram_report as telegram_report
+    import core.whatsapp_report as whatsapp_report
+    from ui.views import movements as movements_mod
+
+    calls = []
+    monkeypatch.setattr(
+        email_report, "send_report_email", lambda *a, **k: calls.append("email")
+    )
+    monkeypatch.setattr(
+        telegram_report, "send_report_telegram",
+        lambda *a, **k: calls.append("telegram"),
+    )
+
+    def boom(*a, **k):
+        calls.append("whatsapp")
+        raise RuntimeError("ventana 24h")
+
+    monkeypatch.setattr(whatsapp_report, "send_report_whatsapp", boom)
+
+    class _Dialog:
+        _email_var = type("V", (), {"get": lambda self: True})()
+        _telegram_var = type("V", (), {"get": lambda self: True})()
+        _whatsapp_var = type("V", (), {"get": lambda self: True})()
+
+    import datetime
+    errors = movements_mod._ReportsDialog._send(
+        _Dialog(), "x.pdf", "Reporte", datetime.date(2026, 1, 1),
+        datetime.date(2026, 1, 31),
+    )
+    assert calls == ["email", "telegram", "whatsapp"]
+    assert errors == ["WhatsApp: ventana 24h"]
+
+
+@pytest.mark.skipif(
+    not os.environ.get("DISPLAY"), reason="requiere un servidor X (Tkinter)"
+)
+def test_checkbox_whatsapp_gateado_por_variables_de_entorno(monkeypatch):
+    import ui.views.movements as mv
+
+    class _View:
+        _tipo = None
+        current_user = {"username": "admin"}
+
+        def _warehouse_id(self):
+            return None
+
+        def _warehouse_name(self):
+            return ""
+
+    def _checkbox(dlg):
+        stack = [dlg]
+        while stack:
+            w = stack.pop()
+            if (
+                type(w).__name__ == "CTkCheckBox"
+                and "WhatsApp" in str(w.cget("text"))
+            ):
+                return w
+            stack.extend(w.winfo_children())
+        raise AssertionError("no se encontró el checkbox de WhatsApp")
+
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        for key in ("WHATSAPP_TOKEN", "WHATSAPP_PHONE_ID", "WHATSAPP_TO"):
+            monkeypatch.delenv(key, raising=False)
+        dlg = mv._ReportsDialog(root, _View())
+        assert _checkbox(dlg).cget("state") == "disabled"
+        dlg.destroy()
+
+        monkeypatch.setenv("WHATSAPP_TOKEN", "TOKEN")
+        monkeypatch.setenv("WHATSAPP_PHONE_ID", "111222333")
+        monkeypatch.setenv("WHATSAPP_TO", "584121234567")
+        dlg = mv._ReportsDialog(root, _View())
+        assert _checkbox(dlg).cget("state") == "normal"
+        dlg.destroy()
+    finally:
+        root.destroy()
