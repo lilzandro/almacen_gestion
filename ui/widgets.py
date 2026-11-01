@@ -277,45 +277,59 @@ class BaseDialog(ctk.CTkToplevel):
         return super().geometry(geometry_string)
 
 
+def _franja_estado(parent, color):
+    """Franja vertical de color al borde izquierdo del diálogo."""
+    franja = ctk.CTkFrame(
+        parent, width=8, height=1, corner_radius=0, fg_color=color
+    )
+    franja.pack(side="left", fill="y")
+    return franja
+
+
+def _pill_estado(parent, text, color):
+    """Pill de estado: punto de color + texto corto (patrón de la app)."""
+    pill = ctk.CTkFrame(parent, fg_color="transparent")
+    pill.pack(anchor="w")
+    ctk.CTkLabel(
+        pill, text="●", font=ctk.CTkFont(size=8), text_color=color
+    ).pack(side="left", padx=(0, 4))
+    ctk.CTkLabel(
+        pill, text=text, font=ctk.CTkFont(size=11, weight="bold"), text_color=color
+    ).pack(side="left")
+    return pill
+
+
 class ConfirmDialog(BaseDialog):
     """Diálogo de confirmación con botones Sí/No."""
 
-    def __init__(self, parent, title, message, is_danger=False):
+    def __init__(
+        self,
+        parent,
+        title,
+        message,
+        is_danger=False,
+        confirm_text="Sí, continuar",
+        cancel_text="Cancelar",
+    ):
         super().__init__(parent)
         self.title(title)
         self.resizable(False, False)
         self.configure(fg_color=BLANCO_CALIDO)
         self.result = False
 
-        ctk.CTkLabel(
-            self,
-            text=title,
-            font=ctk.CTkFont(size=20, weight="bold"),
-            text_color=AZUL_NOCHE,
-        ).pack(pady=(20, 10))
-
-        msg_label = ctk.CTkLabel(
-            self,
-            text=message,
-            font=ctk.CTkFont(size=16),
-            text_color=GRIS_AZULADO,
-            wraplength=360,
-            justify="center",
-        )
-        msg_label.pack(pady=10, padx=20)
-
-        self.update_idletasks()
-        min_height = max(280, msg_label.winfo_reqheight() + 160)
-        self.geometry(f"450x{min_height}")
-
-        btn_frame = ctk.CTkFrame(self, fg_color=BLANCO_CALIDO)
-        btn_frame.pack(pady=20)
-
         btn_color = NARANJA_INTENSO if is_danger else AZUL_CERULEO
+        _franja_estado(self, btn_color)
+
+        body = ctk.CTkFrame(self, fg_color=BLANCO_CALIDO, corner_radius=0)
+        body.pack(side="left", fill="both", expand=True, padx=(18, 18), pady=(16, 14))
+
+        # La botonera reserva su espacio primero (regla del fix anterior).
+        footer = ctk.CTkFrame(body, fg_color="transparent")
+        footer.pack(side="bottom", fill="x", pady=(12, 0))
 
         ctk.CTkButton(
-            btn_frame,
-            text="Sí, continuar",
+            footer,
+            text=confirm_text,
             command=self._on_yes,
             fg_color=btn_color,
             hover_color=HOVER_MARINO if is_danger else HOVER_FILTRO_DISP,
@@ -323,11 +337,11 @@ class ConfirmDialog(BaseDialog):
             width=150,
             height=40,
             font=ctk.CTkFont(size=16, weight="bold"),
-        ).pack(side="left", padx=10)
+        ).pack(side="right", padx=(8, 0))
 
         ctk.CTkButton(
-            btn_frame,
-            text="Cancelar",
+            footer,
+            text=cancel_text,
             command=self._on_no,
             fg_color=CANCELAR_BG,
             hover_color=CANCELAR_HOVER,
@@ -335,7 +349,31 @@ class ConfirmDialog(BaseDialog):
             width=150,
             height=40,
             font=ctk.CTkFont(size=16, weight="bold"),
-        ).pack(side="left", padx=10)
+        ).pack(side="right")
+
+        ctk.CTkLabel(
+            body,
+            text=title,
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color=AZUL_NOCHE,
+            anchor="w",
+            justify="left",
+            wraplength=340,
+        ).pack(fill="x", pady=(2, 4))
+
+        ctk.CTkLabel(
+            body,
+            text=message,
+            font=ctk.CTkFont(size=14),
+            text_color=GRIS_AZULADO,
+            wraplength=340,
+            anchor="w",
+            justify="left",
+        ).pack(fill="x")
+
+        self.update_idletasks()
+        min_height = max(240, self.winfo_reqheight())
+        self.geometry(f"450x{min_height}")
 
         self.update_idletasks()
         show_centered(self)
@@ -351,48 +389,47 @@ class ConfirmDialog(BaseDialog):
 
 
 class MessageDialog(BaseDialog):
-    """Diálogo de mensaje informativo o de error."""
+    """Diálogo de mensaje informativo, de aviso o de error."""
 
-    def __init__(self, parent, title, message, is_error=False):
+    def __init__(
+        self,
+        parent,
+        title,
+        message,
+        is_error=False,
+        is_warning=False,
+        button_text="Aceptar",
+        accent_color=None,
+        badge_text=None,
+    ):
         super().__init__(parent)
         self.title(title)
         self.resizable(False, False)
         self.configure(fg_color=BLANCO_CALIDO)
 
-        icon_color = NARANJA_INTENSO if is_error else AZUL_CERULEO
-        icon_text = "✕" if is_error else "✓"
+        # El estado se deduce también del título para que las llamadas
+        # existentes ("Aviso"/"Error") se vean bien sin tocarlas.
+        title_key = str(title).strip().lower()
+        if is_error or title_key == "error":
+            state_text, accent = "Error", NARANJA_INTENSO
+        elif is_warning or title_key in ("aviso", "advertencia"):
+            state_text, accent = "Aviso", AMARILLO_AMBAR
+        else:
+            state_text, accent = "Éxito", AZUL_CERULEO
+        if accent_color:
+            accent = accent_color
+        badge = badge_text or state_text
 
-        ctk.CTkLabel(
-            self,
-            text=icon_text,
-            font=ctk.CTkFont(size=42, weight="bold"),
-            text_color=icon_color,
-        ).pack(pady=(15, 5))
+        _franja_estado(self, accent)
 
-        ctk.CTkLabel(
-            self,
-            text=title,
-            font=ctk.CTkFont(size=20, weight="bold"),
-            text_color=AZUL_NOCHE,
-        ).pack(pady=(5, 10))
+        body = ctk.CTkFrame(self, fg_color=BLANCO_CALIDO, corner_radius=0)
+        body.pack(side="left", fill="both", expand=True, padx=(18, 18), pady=(16, 14))
 
-        msg_label = ctk.CTkLabel(
-            self,
-            text=message,
-            font=ctk.CTkFont(size=16),
-            text_color=GRIS_AZULADO,
-            wraplength=360,
-            justify="center",
-        )
-        msg_label.pack(pady=5, padx=20)
-
-        self.update_idletasks()
-        min_height = max(240, msg_label.winfo_reqheight() + 140)
-        self.geometry(f"420x{min_height}")
-
+        footer = ctk.CTkFrame(body, fg_color="transparent")
+        footer.pack(side="bottom", fill="x", pady=(12, 0))
         ctk.CTkButton(
-            self,
-            text="Aceptar",
+            footer,
+            text=button_text,
             command=self.destroy,
             fg_color=AZUL_CERULEO,
             hover_color=HOVER_FILTRO_DISP,
@@ -400,7 +437,33 @@ class MessageDialog(BaseDialog):
             width=120,
             height=38,
             font=ctk.CTkFont(size=16, weight="bold"),
-        ).pack(pady=15)
+        ).pack(side="right")
+
+        _pill_estado(body, badge, accent)
+
+        ctk.CTkLabel(
+            body,
+            text=title,
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color=AZUL_NOCHE,
+            anchor="w",
+            justify="left",
+            wraplength=340,
+        ).pack(fill="x", pady=(6, 2))
+
+        ctk.CTkLabel(
+            body,
+            text=message,
+            font=ctk.CTkFont(size=14),
+            text_color=GRIS_AZULADO,
+            wraplength=340,
+            anchor="w",
+            justify="left",
+        ).pack(fill="x")
+
+        self.update_idletasks()
+        min_height = max(200, self.winfo_reqheight())
+        self.geometry(f"440x{min_height}")
 
         self.update_idletasks()
         show_centered(self)

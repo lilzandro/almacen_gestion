@@ -167,7 +167,11 @@ class SuppliersView(ctk.CTkFrame):
         if not iid:
             return
         dlg = ConfirmDialog(
-            self, "Eliminar proveedor", "¿Eliminar este proveedor?", is_danger=True
+            self,
+            "Eliminar proveedor",
+            "¿Eliminar este proveedor?",
+            is_danger=True,
+            confirm_text="Eliminar",
         )
         self.wait_window(dlg)
         if not dlg.result:

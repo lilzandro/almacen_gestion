@@ -128,7 +128,11 @@ class UsersView(ctk.CTkFrame):
             MessageDialog(self, "Aviso", "No puedes eliminarte a ti mismo.")
             return
         dlg = ConfirmDialog(
-            self, "Eliminar usuario", "¿Eliminar este usuario?", is_danger=True
+            self,
+            "Eliminar usuario",
+            "¿Eliminar este usuario?",
+            is_danger=True,
+            confirm_text="Eliminar",
         )
         self.wait_window(dlg)
         if not dlg.result:

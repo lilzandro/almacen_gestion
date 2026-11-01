@@ -1031,6 +1031,7 @@ class ProductsView(ctk.CTkFrame):
             "La unidad desaparecerá del inventario activo y su historial "
             "quedará en Movimientos.",
             is_danger=True,
+            confirm_text="Eliminar",
         )
         self.wait_window(dialog)
 
@@ -1631,6 +1632,7 @@ class _GroupEditDialog(BaseDialog):
             "Su historial quedará en Movimientos (no se archiva nada).\n\n"
             "¿Continuar?",
             is_danger=True,
+            confirm_text="Eliminar",
         )
         self.wait_window(d1)
         if not d1.result:
@@ -1644,6 +1646,7 @@ class _GroupEditDialog(BaseDialog):
             "Esta acción NO se puede deshacer.\n\n"
             "¿Estás seguro?",
             is_danger=True,
+            confirm_text="Eliminar",
         )
         self.wait_window(d2)
         if not d2.result:

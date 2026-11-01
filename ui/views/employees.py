@@ -161,7 +161,11 @@ class EmployeesView(ctk.CTkFrame):
         if not iid:
             return
         dlg = ConfirmDialog(
-            self, "Eliminar empleado", "¿Eliminar este empleado?", is_danger=True
+            self,
+            "Eliminar empleado",
+            "¿Eliminar este empleado?",
+            is_danger=True,
+            confirm_text="Eliminar",
         )
         self.wait_window(dlg)
         if not dlg.result:

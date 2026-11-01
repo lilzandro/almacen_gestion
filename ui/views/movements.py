@@ -295,7 +295,7 @@ class _ReportsDialog(BaseDialog):
         try:
             d1, d2 = self._parse_dates()
         except ValueError as e:
-            MessageDialog(self, "Fecha inválida", str(e))
+            MessageDialog(self, "Fecha inválida", str(e), is_warning=True)
             return
 
         initial = f"reporte_{kind.split()[0].lower()}_{d1}_{d2}.pdf"
@@ -1148,6 +1148,7 @@ class MovementsView(ctk.CTkFrame):
             "Eliminar movimiento",
             f"¿Eliminar el movimiento {label}?\nEl stock se reajustará automáticamente.",
             is_danger=True,
+            confirm_text="Eliminar",
         )
         self.wait_window(d)
         if d.result:
@@ -2395,6 +2396,8 @@ class _MovementDialog(BaseDialog):
                 "¿Imprimir el comprobante ahora?"
                 + (" (para entregar a quien recibe)" if type_ == "salida"
                    else " (para chequear lo que entró)"),
+                confirm_text="Imprimir",
+                cancel_text="No imprimir",
             )
             self.wait_window(offer)
             if offer.result:
