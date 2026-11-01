@@ -1,36 +1,19 @@
-"""Envío de reportes PDF por correo (smtplib, sin dependencias extra).
+"""Abre el cliente de correo con un mensaje prellenado para mandar el reporte.
 
-Credenciales por variables de entorno:
-SMTP_HOST, SMTP_PORT (default 465), SMTP_USER, SMTP_PASSWORD, REPORT_EMAIL_TO.
+No envía el PDF automáticamente — mailto: no permite adjuntar archivos por
+URL, solo prellenar asunto/cuerpo. Abre el cliente de correo predeterminado
+con REPORT_EMAIL_TO, el asunto y un cuerpo que recuerda adjuntar el PDF a
+mano. Configurar solo REPORT_EMAIL_TO (dirección de destino).
 """
 import os
-import smtplib
-from email.mime.application import MIMEApplication
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
+import webbrowser
+from urllib.parse import quote
 
 
 def send_report_email(filepath, subject, body=""):
-    host = os.environ.get("SMTP_HOST")
-    user = os.environ.get("SMTP_USER")
-    password = os.environ.get("SMTP_PASSWORD")
     to = os.environ.get("REPORT_EMAIL_TO")
-    if not all([host, user, password, to]):
-        raise RuntimeError(
-            "Falta configurar SMTP_HOST/SMTP_USER/SMTP_PASSWORD/REPORT_EMAIL_TO."
-        )
-    msg = MIMEMultipart()
-    msg["Subject"] = subject
-    msg["From"] = user
-    msg["To"] = to
-    msg.attach(MIMEText(body or "Reporte adjunto."))
-    with open(filepath, "rb") as f:
-        part = MIMEApplication(f.read(), Name=os.path.basename(filepath))
-    part["Content-Disposition"] = (
-        f'attachment; filename="{os.path.basename(filepath)}"'
-    )
-    msg.attach(part)
-    port = int(os.environ.get("SMTP_PORT", "465"))
-    with smtplib.SMTP_SSL(host, port) as server:
-        server.login(user, password)
-        server.send_message(msg)
+    if not to:
+        raise RuntimeError("Falta configurar REPORT_EMAIL_TO.")
+    full_body = f"{body}\n\nAdjuntar el archivo: {os.path.basename(filepath)}"
+    url = f"mailto:{to}?subject={quote(subject)}&body={quote(full_body)}"
+    webbrowser.open(url)

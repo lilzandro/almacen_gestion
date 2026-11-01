@@ -159,55 +159,27 @@ def test_split_ranking_separa_mas_y_menos_movidos_sin_repetir():
     assert [r["name"] for r in bottom] == ["P14", "P13", "P12"]
 
 
-def test_send_report_email_sin_credenciales_avisa(monkeypatch):
+def test_send_report_email_sin_to_avisa(monkeypatch):
     from core.email_report import send_report_email
 
-    for key in ("SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD", "REPORT_EMAIL_TO"):
-        monkeypatch.delenv(key, raising=False)
-    with pytest.raises(RuntimeError, match="SMTP_HOST"):
+    monkeypatch.delenv("REPORT_EMAIL_TO", raising=False)
+    with pytest.raises(RuntimeError, match="REPORT_EMAIL_TO"):
         send_report_email("x.pdf", "asunto")
 
 
-def test_send_report_email_adjunta_el_pdf(tmp_path, monkeypatch):
+def test_send_report_email_abre_el_enlace(monkeypatch):
     import core.email_report as email_report
 
-    pdf = tmp_path / "reporte.pdf"
-    pdf.write_bytes(b"%PDF-1.4 contenido de prueba")
-    for key, value in {
-        "SMTP_HOST": "smtp.test", "SMTP_PORT": "465", "SMTP_USER": "u@test",
-        "SMTP_PASSWORD": "secret", "REPORT_EMAIL_TO": "dest@test",
-    }.items():
-        monkeypatch.setenv(key, value)
-
-    sent = {}
-
-    class FakeSMTP:
-        def __init__(self, host, port):
-            sent["server"] = (host, port)
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            return False
-
-        def login(self, user, password):
-            sent["login"] = (user, password)
-
-        def send_message(self, msg):
-            sent["msg"] = msg
-
-    monkeypatch.setattr(email_report.smtplib, "SMTP_SSL", FakeSMTP)
-    email_report.send_report_email(str(pdf), "Reporte", "cuerpo")
-
-    msg = sent["msg"]
-    assert sent["server"] == ("smtp.test", 465)
-    assert sent["login"] == ("u@test", "secret")
-    assert msg["To"] == "dest@test"
-    assert msg["Subject"] == "Reporte"
-    attachments = [p for p in msg.walk() if p.get_filename() == "reporte.pdf"]
-    assert len(attachments) == 1
-    assert attachments[0].get_payload(decode=True) == pdf.read_bytes()
+    monkeypatch.setenv("REPORT_EMAIL_TO", "destino@ejemplo.com")
+    captured = {}
+    monkeypatch.setattr(
+        email_report.webbrowser, "open",
+        lambda url: captured.setdefault("url", url),
+    )
+    email_report.send_report_email("reporte.pdf", "Reporte diario", "cuerpo")
+    assert captured["url"].startswith("mailto:destino@ejemplo.com?subject=")
+    assert "Adjuntar" in captured["url"]
+    assert "reporte.pdf" in captured["url"]
 
 
 def test_export_single_movement_genera_pdf_simple(tmp_path):
@@ -367,125 +339,24 @@ def test_receipt_signature_for_solo_salida_y_devolucion():
     assert receipt_signature_for("asignacion") is None
 
 
-def test_send_report_whatsapp_sin_credenciales_avisa(monkeypatch):
+def test_send_report_whatsapp_sin_to_avisa(monkeypatch):
     from core.whatsapp_report import send_report_whatsapp
 
-    for key in ("WHATSAPP_TOKEN", "WHATSAPP_PHONE_ID", "WHATSAPP_TO"):
-        monkeypatch.delenv(key, raising=False)
-    with pytest.raises(RuntimeError, match="WHATSAPP_TOKEN"):
-        send_report_whatsapp("x.pdf")
-
-
-def test_send_report_whatsapp_con_credenciales_parciales_avisa(monkeypatch):
-    from core.whatsapp_report import send_report_whatsapp
-
-    monkeypatch.setenv("WHATSAPP_TOKEN", "TOKEN")
-    monkeypatch.setenv("WHATSAPP_PHONE_ID", "111222333")
     monkeypatch.delenv("WHATSAPP_TO", raising=False)
     with pytest.raises(RuntimeError, match="WHATSAPP_TO"):
         send_report_whatsapp("x.pdf")
 
 
-def test_send_report_whatsapp_envia_documento(tmp_path, monkeypatch):
+def test_send_report_whatsapp_abre_el_enlace(monkeypatch):
     import core.whatsapp_report as whatsapp_report
 
-    pdf = tmp_path / "reporte.pdf"
-    pdf.write_bytes(b"%PDF-1.4 contenido de prueba")
-    monkeypatch.setenv("WHATSAPP_TOKEN", "TOKEN")
-    monkeypatch.setenv("WHATSAPP_PHONE_ID", "111222333")
     monkeypatch.setenv("WHATSAPP_TO", "584121234567")
-
-    calls = []
-
-    class FakeResponse:
-        def __init__(self, body):
-            self._body = body
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            return False
-
-        def read(self):
-            return self._body
-
-    def fake_urlopen(req, timeout=0):
-        calls.append(req)
-        if len(calls) == 1:
-            return FakeResponse(b'{"id": "MEDIA123"}')
-        return FakeResponse(b'{"messages": [{"id": "wamid.ABC"}]}')
-
-    monkeypatch.setattr(whatsapp_report.urllib.request, "urlopen", fake_urlopen)
-    whatsapp_report.send_report_whatsapp(str(pdf), "Reporte")
-
-    assert len(calls) == 2
-    upload_req, send_req = calls
-    assert upload_req.full_url == (
-        "https://graph.facebook.com/v22.0/111222333/media"
-    )
-    assert b'name="file"' in upload_req.data
-    assert pdf.read_bytes() in upload_req.data
-    assert upload_req.headers["Authorization"] == "Bearer TOKEN"
-
-    assert send_req.full_url == (
-        "https://graph.facebook.com/v22.0/111222333/messages"
-    )
-    import json
-    payload = json.loads(send_req.data)
-    assert payload["to"] == "584121234567"
-    assert payload["type"] == "document"
-    assert payload["document"]["id"] == "MEDIA123"
-    assert payload["document"]["caption"] == "Reporte"
-
-
-class _FakeResponse:
-    def __init__(self, body):
-        self._body = body
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *args):
-        return False
-
-    def read(self):
-        return self._body
-
-
-def _whatsapp_env(monkeypatch):
-    monkeypatch.setenv("WHATSAPP_TOKEN", "TOKEN")
-    monkeypatch.setenv("WHATSAPP_PHONE_ID", "111222333")
-    monkeypatch.setenv("WHATSAPP_TO", "584121234567")
-
-
-def test_send_report_whatsapp_rechazo_de_subida(tmp_path, monkeypatch):
-    import core.whatsapp_report as whatsapp_report
-
-    _whatsapp_env(monkeypatch)
-    pdf = tmp_path / "r.pdf"
-    pdf.write_bytes(b"x")
+    captured = {}
     monkeypatch.setattr(
-        whatsapp_report.urllib.request, "urlopen",
-        lambda req, timeout=0: _FakeResponse(b'{"error": {"message": "bad"}}'),
+        whatsapp_report.webbrowser, "open",
+        lambda url: captured.setdefault("url", url),
     )
-    with pytest.raises(RuntimeError, match="subida"):
-        whatsapp_report.send_report_whatsapp(str(pdf))
-
-
-def test_send_report_whatsapp_rechazo_de_envio(tmp_path, monkeypatch):
-    import core.whatsapp_report as whatsapp_report
-
-    _whatsapp_env(monkeypatch)
-    pdf = tmp_path / "r.pdf"
-    pdf.write_bytes(b"x")
-    responses = [
-        _FakeResponse(b'{"id": "MEDIA123"}'),
-        _FakeResponse(b'{"error": {"message": "ventana 24h"}}'),
-    ]
-    monkeypatch.setattr(
-        whatsapp_report.urllib.request, "urlopen",
-        lambda req, timeout=0: responses.pop(0),
-    )
-    with pytest.raises(RuntimeError, match="envío"):
-        whatsapp_report.send_report_whatsapp(str(pdf))
+    whatsapp_report.send_report_whatsapp("reporte.pdf", "Reporte diario")
+    assert captured["url"].startswith("https://wa.me/584121234567?text=")
+    assert "Adjuntar" in captured["url"]
+    assert "reporte.pdf" in captured["url"]

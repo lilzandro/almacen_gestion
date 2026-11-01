@@ -575,14 +575,11 @@ def test_checkbox_whatsapp_gateado_por_variables_de_entorno(monkeypatch):
     root = tk.Tk()
     root.withdraw()
     try:
-        for key in ("WHATSAPP_TOKEN", "WHATSAPP_PHONE_ID", "WHATSAPP_TO"):
-            monkeypatch.delenv(key, raising=False)
+        monkeypatch.delenv("WHATSAPP_TO", raising=False)
         dlg = mv._ReportsDialog(root, _View())
         assert _checkbox(dlg).cget("state") == "disabled"
         dlg.destroy()
 
-        monkeypatch.setenv("WHATSAPP_TOKEN", "TOKEN")
-        monkeypatch.setenv("WHATSAPP_PHONE_ID", "111222333")
         monkeypatch.setenv("WHATSAPP_TO", "584121234567")
         dlg = mv._ReportsDialog(root, _View())
         assert _checkbox(dlg).cget("state") == "normal"

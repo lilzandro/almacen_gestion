@@ -240,22 +240,20 @@ class _ReportsDialog(BaseDialog):
         )
         self._envio_label.pack(fill="x", padx=16, pady=(16, 2))
 
-        email_ok = all(os.environ.get(k) for k in (
-            "SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD", "REPORT_EMAIL_TO"
-        ))
-        whatsapp_ok = all(os.environ.get(k) for k in (
-            "WHATSAPP_TOKEN", "WHATSAPP_PHONE_ID", "WHATSAPP_TO"
-        ))
+        email_ok = bool(os.environ.get("REPORT_EMAIL_TO"))
+        whatsapp_ok = bool(os.environ.get("WHATSAPP_TO"))
         self._email_var = tk.BooleanVar(value=False)
         self._whatsapp_var = tk.BooleanVar(value=False)
         ctk.CTkCheckBox(
-            body, text="Enviar por correo", variable=self._email_var,
+            body, text="Abrir correo (adjuntás el PDF a mano)",
+            variable=self._email_var,
             font=ctk.CTkFont(size=13), text_color=DSG_TEXT_BODY,
             fg_color=DSG_BRAND, hover_color=DSG_PRIMARY_HOVER,
             state="normal" if email_ok else "disabled",
         ).pack(anchor="w", padx=16, pady=2)
         ctk.CTkCheckBox(
-            body, text="Enviar por WhatsApp", variable=self._whatsapp_var,
+            body, text="Abrir WhatsApp (adjuntás el PDF a mano)",
+            variable=self._whatsapp_var,
             font=ctk.CTkFont(size=13), text_color=DSG_TEXT_BODY,
             fg_color=DSG_BRAND, hover_color=DSG_PRIMARY_HOVER,
             state="normal" if whatsapp_ok else "disabled",
@@ -264,9 +262,9 @@ class _ReportsDialog(BaseDialog):
         if not (email_ok and whatsapp_ok):
             missing = []
             if not email_ok:
-                missing.append("SMTP_HOST/SMTP_USER/SMTP_PASSWORD/REPORT_EMAIL_TO")
+                missing.append("REPORT_EMAIL_TO")
             if not whatsapp_ok:
-                missing.append("WHATSAPP_TOKEN/WHATSAPP_PHONE_ID/WHATSAPP_TO")
+                missing.append("WHATSAPP_TO")
             ctk.CTkLabel(
                 body, text="Sin configurar: " + " · ".join(missing),
                 font=ctk.CTkFont(size=11), text_color=DSG_TEXT_SEC2,
