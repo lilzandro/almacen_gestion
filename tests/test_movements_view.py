@@ -184,3 +184,39 @@ def test_detalle_sin_callback_no_muestra_eliminar(monkeypatch):
     finally:
         dlg.destroy()
         root.destroy()
+
+
+@pytest.mark.skipif(
+    not os.environ.get("DISPLAY"), reason="requiere un servidor X (Tkinter)"
+)
+def test_editar_movimiento_la_ventana_entra_el_contenido_real(monkeypatch):
+    import ui.views.movements as movements_mod
+
+    movement = {
+        "id": 99, "type": "salida", "timestamp": "2026-11-01 10:00:00",
+        "product": "", "employee_id": None, "notes": "",
+        "items": [
+            {"id": 1, "name": "Router", "brand": "TPLink", "qty": 1,
+             "unit": "und", "seriales": ""},
+        ],
+    }
+    monkeypatch.setattr(movements_mod, "get_all_employees", lambda: [])
+
+    root = tk.Tk()
+    root.geometry("1400x900+3000+3000")
+    root.update_idletasks()
+    root.update()
+    try:
+        dlg = movements_mod._MovementEditDialog(
+            root, movement=movement,
+            current_user={"id": 1, "role": "admin"}, on_save=lambda: None,
+        )
+        root.update_idletasks()
+        root.update()
+        declared_h = int(dlg.geometry().split("x")[1].split("+")[0])
+        assert dlg.winfo_reqheight() <= declared_h, (
+            f"el contenido pide {dlg.winfo_reqheight()}px pero la ventana "
+            f"declara solo {declared_h}px de alto"
+        )
+    finally:
+        root.destroy()

@@ -153,6 +153,25 @@ class _ReportsDialog(BaseDialog):
             text_color="white",
         ).pack(side="left", padx=20)
 
+        btns = ctk.CTkFrame(self, fg_color=DSG_BG)
+        btns.pack(side="bottom", fill="x", padx=16, pady=(0, 14))
+        self._generate_btn = ctk.CTkButton(
+            btns, text="Generar PDF", height=40,
+            font=ctk.CTkFont(size=14, weight="bold"),
+            fg_color=DSG_PRIMARY, hover_color=DSG_PRIMARY_HOVER,
+            text_color="white", corner_radius=9,
+            command=self._generate,
+        )
+        self._generate_btn.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        ctk.CTkButton(
+            btns, text="Cancelar", height=40,
+            font=ctk.CTkFont(size=14, weight="bold"),
+            fg_color=DSG_SURF, hover_color=DSG_ROW_HOVER,
+            border_width=1, border_color=DSG_BORDER_CTRL,
+            text_color=DSG_TEXT_BODY, corner_radius=9,
+            command=self.destroy,
+        ).pack(side="left", fill="x", expand=True)
+
         body = ctk.CTkFrame(self, fg_color=DSG_SURF, corner_radius=10)
         body.pack(fill="both", expand=True, padx=16, pady=14)
 
@@ -231,25 +250,6 @@ class _ReportsDialog(BaseDialog):
             text_color=DSG_TEXT_SEC2, anchor="w",
         )
         self._status.pack(fill="x", padx=16, pady=(10, 0))
-
-        btns = ctk.CTkFrame(self, fg_color=DSG_BG)
-        btns.pack(fill="x", padx=16, pady=(0, 14))
-        self._generate_btn = ctk.CTkButton(
-            btns, text="Generar PDF", height=40,
-            font=ctk.CTkFont(size=14, weight="bold"),
-            fg_color=DSG_PRIMARY, hover_color=DSG_PRIMARY_HOVER,
-            text_color="white", corner_radius=9,
-            command=self._generate,
-        )
-        self._generate_btn.pack(side="left", fill="x", expand=True, padx=(0, 8))
-        ctk.CTkButton(
-            btns, text="Cancelar", height=40,
-            font=ctk.CTkFont(size=14, weight="bold"),
-            fg_color=DSG_SURF, hover_color=DSG_ROW_HOVER,
-            border_width=1, border_color=DSG_BORDER_CTRL,
-            text_color=DSG_TEXT_BODY, corner_radius=9,
-            command=self.destroy,
-        ).pack(side="left", fill="x", expand=True)
 
         self._on_type_changed("Diario")
 
@@ -1913,17 +1913,6 @@ class _MovementDialog(BaseDialog):
             text_color="white",
         ).pack(pady=15)
 
-        content = ctk.CTkFrame(main, fg_color=BLANCO_CALIDO)
-        content.pack(fill="both", expand=True, padx=20)
-
-        left = ctk.CTkFrame(content, fg_color="white", corner_radius=10)
-        left.pack(side="left", fill="both", expand=True, padx=(0, 10))
-
-        right = ctk.CTkFrame(content, fg_color="white", corner_radius=10)
-        right.pack(side="right", fill="both", expand=True, padx=(10, 0))
-        self._left = left
-        self._right = right
-
         # La botonera se crea primero (anclada al pie) y la ventana se
         # muestra de inmediato; el contenido pesado se construye en el
         # siguiente ciclo para que la apertura se sienta instantánea.
@@ -1949,6 +1938,17 @@ class _MovementDialog(BaseDialog):
             height=45,
             command=self.destroy,
         ).pack(side="left", expand=True, padx=5)
+
+        content = ctk.CTkFrame(main, fg_color=BLANCO_CALIDO)
+        content.pack(fill="both", expand=True, padx=20)
+
+        left = ctk.CTkFrame(content, fg_color="white", corner_radius=10)
+        left.pack(side="left", fill="both", expand=True, padx=(0, 10))
+
+        right = ctk.CTkFrame(content, fg_color="white", corner_radius=10)
+        right.pack(side="right", fill="both", expand=True, padx=(10, 0))
+        self._left = left
+        self._right = right
 
         show_centered(self)
         self.after(50, self.grab_set)
@@ -2456,7 +2456,7 @@ class _MovementEditDialog(BaseDialog):
     def __init__(self, parent, movement, current_user, on_save):
         super().__init__(parent)
         self.title("Editar Movimiento")
-        self.geometry("500x480")
+        self.geometry("540x800")
         self.resizable(False, False)
         self.configure(fg_color=BLANCO_CALIDO)
         self.transient(parent)
