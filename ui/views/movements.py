@@ -243,14 +243,10 @@ class _ReportsDialog(BaseDialog):
         email_ok = all(os.environ.get(k) for k in (
             "SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD", "REPORT_EMAIL_TO"
         ))
-        telegram_ok = all(os.environ.get(k) for k in (
-            "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"
-        ))
         whatsapp_ok = all(os.environ.get(k) for k in (
             "WHATSAPP_TOKEN", "WHATSAPP_PHONE_ID", "WHATSAPP_TO"
         ))
         self._email_var = tk.BooleanVar(value=False)
-        self._telegram_var = tk.BooleanVar(value=False)
         self._whatsapp_var = tk.BooleanVar(value=False)
         ctk.CTkCheckBox(
             body, text="Enviar por correo", variable=self._email_var,
@@ -259,24 +255,16 @@ class _ReportsDialog(BaseDialog):
             state="normal" if email_ok else "disabled",
         ).pack(anchor="w", padx=16, pady=2)
         ctk.CTkCheckBox(
-            body, text="Enviar por Telegram", variable=self._telegram_var,
-            font=ctk.CTkFont(size=13), text_color=DSG_TEXT_BODY,
-            fg_color=DSG_BRAND, hover_color=DSG_PRIMARY_HOVER,
-            state="normal" if telegram_ok else "disabled",
-        ).pack(anchor="w", padx=16, pady=2)
-        ctk.CTkCheckBox(
             body, text="Enviar por WhatsApp", variable=self._whatsapp_var,
             font=ctk.CTkFont(size=13), text_color=DSG_TEXT_BODY,
             fg_color=DSG_BRAND, hover_color=DSG_PRIMARY_HOVER,
             state="normal" if whatsapp_ok else "disabled",
         ).pack(anchor="w", padx=16, pady=2)
 
-        if not (email_ok and telegram_ok and whatsapp_ok):
+        if not (email_ok and whatsapp_ok):
             missing = []
             if not email_ok:
                 missing.append("SMTP_HOST/SMTP_USER/SMTP_PASSWORD/REPORT_EMAIL_TO")
-            if not telegram_ok:
-                missing.append("TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID")
             if not whatsapp_ok:
                 missing.append("WHATSAPP_TOKEN/WHATSAPP_PHONE_ID/WHATSAPP_TO")
             ctk.CTkLabel(
@@ -473,13 +461,6 @@ class _ReportsDialog(BaseDialog):
                 send_report_email(path, subject, "Reporte adjunto.")
             except Exception as e:
                 errors.append(f"Correo: {e}")
-        if self._telegram_var.get():
-            try:
-                from core.telegram_report import send_report_telegram
-
-                send_report_telegram(path, subject)
-            except Exception as e:
-                errors.append(f"Telegram: {e}")
         if self._whatsapp_var.get():
             try:
                 from core.whatsapp_report import send_report_whatsapp

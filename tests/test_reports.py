@@ -210,52 +210,6 @@ def test_send_report_email_adjunta_el_pdf(tmp_path, monkeypatch):
     assert attachments[0].get_payload(decode=True) == pdf.read_bytes()
 
 
-def test_send_report_telegram_sin_credenciales_avisa(monkeypatch):
-    from core.telegram_report import send_report_telegram
-
-    for key in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"):
-        monkeypatch.delenv(key, raising=False)
-    with pytest.raises(RuntimeError, match="TELEGRAM_BOT_TOKEN"):
-        send_report_telegram("x.pdf")
-
-
-def test_send_report_telegram_envia_documento(tmp_path, monkeypatch):
-    import core.telegram_report as telegram_report
-
-    pdf = tmp_path / "reporte.pdf"
-    pdf.write_bytes(b"%PDF-1.4 contenido de prueba")
-    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "TOKEN")
-    monkeypatch.setenv("TELEGRAM_CHAT_ID", "12345")
-
-    captured = {}
-
-    class FakeResponse:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            return False
-
-        def read(self):
-            return b'{"ok": true}'
-
-    def fake_urlopen(req, timeout=0):
-        captured["url"] = req.full_url
-        captured["data"] = req.data
-        captured["timeout"] = timeout
-        return FakeResponse()
-
-    monkeypatch.setattr(telegram_report.urllib.request, "urlopen", fake_urlopen)
-    telegram_report.send_report_telegram(str(pdf), "Reporte")
-
-    assert captured["url"] == "https://api.telegram.org/botTOKEN/sendDocument"
-    assert b'name="chat_id"' in captured["data"]
-    assert b"12345" in captured["data"]
-    assert b'filename="reporte.pdf"' in captured["data"]
-    assert pdf.read_bytes() in captured["data"]
-    assert captured["timeout"] == 30
-
-
 def test_export_single_movement_genera_pdf_simple(tmp_path):
     from core.export import export_single_movement
 
