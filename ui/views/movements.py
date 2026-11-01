@@ -400,13 +400,13 @@ class MovementsView(ctk.CTkFrame):
 
     # Columnas físicas: gutters simétricos (18 px) a ambos lados para que el
     # contenido nunca quede pegado a los bordes.
-    COLS = ["pad_l", "id", "tipo", "fecha", "cant", "product", "reg", "acc", "pad_r"]
+    COLS = ["pad_l", "id", "tipo", "fecha", "cant", "product", "reg", "pad_r"]
     COL_ANCHOR = {
         "pad_l": "w", "id": "w", "tipo": "center", "fecha": "w", "cant": "center",
-        "product": "w", "reg": "w", "acc": "e", "pad_r": "w",
+        "product": "w", "reg": "w", "pad_r": "w",
     }
-    COL_MINS = [18, 55, 115, 140, 130, 160, 100, 150, 18]
-    COL_WEIGHTS = [0, 1, 3, 4, 4, 6, 3, 1, 0]
+    COL_MINS = [18, 55, 115, 140, 130, 160, 100, 18]
+    COL_WEIGHTS = [0, 1, 3, 4, 4, 6, 3, 0]
     SUM_WEIGHTS = sum(COL_WEIGHTS)
     SUM_FIXED = sum(COL_MINS)
     SCROLL_RESERVE = 16
@@ -426,7 +426,7 @@ class MovementsView(ctk.CTkFrame):
     HEADERS = [
         (1, "ID", "w"), (2, "Tipo", "center"), (3, "Fecha / hora", "w"),
         (4, "Cant.", "center"), (5, "Producto", "w"),
-        (6, "Registrado", "w"), (7, "Acciones", "e"),
+        (6, "Registrado", "w"),
     ]
 
     CHIPS = [
@@ -464,7 +464,6 @@ class MovementsView(ctk.CTkFrame):
         self._ui_family = _fam
         self._fonts = self._build_fonts()
         self._widgets_built = False
-        self._row_buttons = {}
 
         # Estado (State Management del handoff)
         self._tipo = None
@@ -480,7 +479,6 @@ class MovementsView(ctk.CTkFrame):
         self._filters_expanded = True
         self._resize_job = None
         self._card_last_w = 0
-        self._row_btn_sync_job = None
         self._ctx_id = None
         self._last_sub = None
         self._last_hint = None
@@ -650,7 +648,7 @@ class MovementsView(ctk.CTkFrame):
                               anchor=self.COL_ANCHOR[c])
             self._tree.heading(c, text="")
         self._tree.grid(row=0, column=0, sticky="nsew")
-        self._sb = ttk.Scrollbar(body, orient="vertical", command=self._on_scroll)
+        self._sb = ttk.Scrollbar(body, orient="vertical", command=self._tree.yview)
         self._tree.configure(yscrollcommand=self._sb.set)
         self._sb.grid(row=0, column=1, sticky="ns")
         self._type_images = {}
@@ -688,12 +686,7 @@ class MovementsView(ctk.CTkFrame):
 
         # Interacciones de la tabla
         self._tree.bind("<Double-1>", self._on_double_click)
-        self._tree.bind("<Button-1>", self._on_single_click)
-        self._tree.bind("<Motion>", self._on_motion)
         self._tree.bind("<Button-3>", self._on_right_click)
-        for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>", "<KeyRelease>"):
-            self._tree.bind(seq, self._sync_row_buttons_soon, add="+")
-        self._tree.bind("<Configure>", self._queue_row_button_sync, add="+")
         self._tree.bind("<Delete>", self._on_delete_key)
         self._tree.bind("<<TreeviewSelect>>", self._on_tree_select)
         self._ctx_menu = tk.Menu(self, tearoff=0, font=self._fonts["sub"])
@@ -957,7 +950,6 @@ class MovementsView(ctk.CTkFrame):
         if not self._widgets_built:
             return
         rows = getattr(self, "_rows", [])
-        self._clear_row_buttons()
         self._tree.delete(*self._tree.get_children())
         if not rows:
             filtered = bool(self._busqueda) or self._tipo is not None
@@ -991,7 +983,6 @@ class MovementsView(ctk.CTkFrame):
                     r.get("cant_display") or str(r["quantity"] or ""),
                     r["product"] or "—",
                     r["registered_by"] or "",
-                    "",  # acc: los botones reales van superpuestos
                     "",  # pad_r (margen derecho)
                 ),
             )
@@ -1005,7 +996,6 @@ class MovementsView(ctk.CTkFrame):
             self._flash_id = None
             self._flash_type = None
         self._ensure_widths(0)
-        self.after_idle(self._sync_row_buttons)
 
     def _row_tag_for_index(self, idx):
         return "row_even" if idx % 2 == 0 else "row_odd"
@@ -1057,7 +1047,6 @@ class MovementsView(ctk.CTkFrame):
         for col, cw in zip(self.COLS, widths):
             self._tree.column(col, width=cw, minwidth=max(20, cw // 2),
                               stretch=False, anchor=self.COL_ANCHOR[col])
-        self._queue_row_button_sync()
 
     def _on_card_configure(self, event):
         if not self._widgets_built:
@@ -1075,137 +1064,23 @@ class MovementsView(ctk.CTkFrame):
         if self._rows:
             self._apply_widths()
 
-    # ── botones reales de acciones por fila (overlay sobre el Treeview) ──
-    def _queue_row_button_sync(self, _event=None):
-        """Debounce para la ráfaga de <Configure> al maximizar/redimensionar."""
-        if self._row_btn_sync_job:
-            self.after_cancel(self._row_btn_sync_job)
-        self._row_btn_sync_job = self.after(150, self._do_row_button_sync)
-
-    def _do_row_button_sync(self):
-        self._row_btn_sync_job = None
-        self._sync_row_buttons()
-
-    def _sync_row_buttons_soon(self, _event=None):
-        """Scroll/teclado: sync inmediato, sin demora perceptible."""
-        self.after_idle(self._sync_row_buttons)
-
-    def _on_scroll(self, *args):
-        self._tree.yview(*args)
-        self.after_idle(self._sync_row_buttons)
-
-    def _clear_row_buttons(self):
-        for pair in self._row_buttons.values():
-            for btn in pair:
-                btn.destroy()
-        self._row_buttons.clear()
-
-    def _make_row_buttons(self, iid):
-        mid = int(iid)
-        edit = ctk.CTkButton(
-            self._body, text="Editar", width=70, height=26,
-            font=ctk.CTkFont(size=10, weight="bold"),
-            fg_color=DSG_BRAND, hover_color=DSG_BRAND_DARK,
-            text_color="white", corner_radius=6,
-            command=lambda: self._edit_movement(mid),
-        )
-        delete = ctk.CTkButton(
-            self._body, text="Eliminar", width=70, height=26,
-            font=ctk.CTkFont(size=10, weight="bold"),
-            fg_color=DSG_SURF, hover_color=DSG_HOVER_DANGER_BG,
-            border_width=1, border_color=DSG_DANGER,
-            text_color=DSG_DANGER, corner_radius=6,
-            command=lambda: self._delete_movement(mid),
-        )
-        return edit, delete
-
-    def _sync_row_buttons(self, attempts=0):
-        """Coloca los botones sobre la celda 'acc' de cada fila visible."""
-        if not self._widgets_built:
-            return
-        min_w = self.COL_MINS[self.COLS.index("acc")]
-        if self._tree.column("acc", "width") < min_w:
-            if attempts < 20:
-                self.after(60, lambda: self._sync_row_buttons(attempts + 1))
-            return
-        visibles = set()
-        for iid in self._tree.get_children():
-            box = self._tree.bbox(iid, "acc")
-            if not box:
-                continue
-            x, y, w, h = box
-            visibles.add(iid)
-            pair = self._row_buttons.get(iid)
-            if pair is None:
-                pair = self._make_row_buttons(iid)
-                self._row_buttons[iid] = pair
-            gap = 4
-            bw = max((w - gap * 3) // 2, 44)
-            by = y + (h - 26) // 2
-            edit, delete = pair
-            edit.configure(width=bw)
-            delete.configure(width=bw)
-            edit.place(x=x + gap, y=by)
-            delete.place(x=x + gap * 2 + bw, y=by)
-            edit.lift()
-            delete.lift()
-        for iid, pair in self._row_buttons.items():
-            if iid not in visibles:
-                for btn in pair:
-                    btn.place_forget()
-
     # ── acciones sobre filas ─────────────────────────────────────────────
     def _item_under(self, event):
         iid = self._tree.identify_row(event.y)
         return iid
 
-    def _acc_column(self, event):
-        """True si el puntero está sobre la columna de acciones."""
-        col = self._tree.identify_column(event.x)
-        if not col:
-            return False
-        try:
-            idx = int(col.replace("#", "")) - 1
-        except ValueError:
-            return False
-        return 0 <= idx < len(self.COLS) and self.COLS[idx] == "acc"
-
-    def _on_single_click(self, event):
-        iid = self._tree.identify_row(event.y)
-        if not iid:
-            return
-        if not self._acc_column(event):
-            return  # el clic no fue en la columna de acciones
-        box = self._tree.bbox(iid, "acc")
-        if not box:
-            return
-        x, _y, w, _h = box
-        mid = int(iid)
-        if event.x < x + w / 2:
-            self._edit_movement(mid)
-        else:
-            self._delete_movement(mid)
-        return "break"  # no dejar que siga como selección normal de fila
-
-    def _on_motion(self, event):
-        """Cursor de mano sobre ✏️/🗑️: señal de que son clickeables."""
-        if self._tree.identify_row(event.y) and self._acc_column(event):
-            self._tree.configure(cursor="hand2")
-        else:
-            self._tree.configure(cursor="")
-
     def _on_double_click(self, event):
-        if self._acc_column(event):
-            return  # el clic de acciones ya se resolvió en <Button-1>
         iid = self._tree.identify_row(event.y)
         if iid:
             self._open_info(int(iid))
 
     def _open_info(self, mid):
+        is_admin = self.current_user.get("role") == "admin"
         _MovementInfoDialog(
             self,
             movement_id=mid,
             on_edit=lambda m=mid: self._edit_movement(m),
+            on_delete=(lambda m=mid: self._delete_movement(m)) if is_admin else None,
         )
 
     def _on_right_click(self, event):
@@ -1491,7 +1366,7 @@ class _MovementInfoDialog(BaseDialog):
                               DSG_BADGE_ELIMINACION_BG, DSG_BADGE_ELIMINACION_FG),
     }
 
-    def __init__(self, parent, movement_id, on_edit=None):
+    def __init__(self, parent, movement_id, on_edit=None, on_delete=None):
         super().__init__(parent)
         self.title("Detalle de movimiento")
         self.geometry("960x800")
@@ -1499,6 +1374,7 @@ class _MovementInfoDialog(BaseDialog):
         self.configure(fg_color=DSG_BG)
         self.transient(parent)
         self._on_edit = on_edit
+        self._on_delete = on_delete
 
         try:
             detail = get_movement_detail(movement_id)
@@ -1606,6 +1482,14 @@ class _MovementInfoDialog(BaseDialog):
                 text_color=DSG_BRAND, corner_radius=9, height=40,
                 command=self._edit,
             ).pack(side="left", padx=(20, 8), pady=12)
+        if on_delete is not None:
+            ctk.CTkButton(
+                foot, text="✕  Eliminar", font=ctk.CTkFont(size=15, weight="bold"),
+                fg_color=DSG_SURF, hover_color=DSG_HOVER_DANGER_BG,
+                border_width=1, border_color=DSG_DANGER,
+                text_color=DSG_DANGER, corner_radius=9, height=40,
+                command=self._delete,
+            ).pack(side="left", padx=(8, 8), pady=12)
         ctk.CTkButton(
             foot, text="⧉  Copiar", font=ctk.CTkFont(size=15),
             fg_color=DSG_SURF, hover_color=DSG_ROW_HOVER,
@@ -1789,6 +1673,11 @@ class _MovementInfoDialog(BaseDialog):
         self.destroy()
         if self._on_edit:
             self._on_edit()
+
+    def _delete(self):
+        self.destroy()
+        if self._on_delete:
+            self._on_delete()
 
 
 class _SearchableMultiSelect(ctk.CTkFrame):
