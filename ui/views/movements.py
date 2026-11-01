@@ -1109,17 +1109,6 @@ class MovementsView(ctk.CTkFrame):
             MessageDialog(self, "Aviso",
                           "Solo un administrador puede editar movimientos.")
             return
-        rows = getattr(self, "_rows", [])
-        row = next((r for r in rows if r["id"] == mid), None)
-        if row and (
-            (row.get("item_count") or 0) > 1 or row.get("product_id") in (0, None)
-        ):
-            MessageDialog(
-                self, "Aviso",
-                "Los movimientos con varios productos no se pueden editar.\n"
-                "Elimínalo y regístralo de nuevo.",
-            )
-            return
         try:
             mov = get_movement(mid)
         except Exception as e:
@@ -2471,6 +2460,22 @@ class _MovementEditDialog(BaseDialog):
             text_color="white",
         ).pack(pady=15)
 
+        btns = ctk.CTkFrame(self, fg_color=BLANCO_CALIDO)
+        btns.pack(side="bottom", fill="x", padx=16, pady=(0, 12))
+        ctk.CTkButton(
+            btns, text="✓ GUARDAR", height=38,
+            font=ctk.CTkFont(size=13, weight="bold"),
+            fg_color=AZUL_MARINO, hover_color=AZUL_NOCHE, text_color="white",
+            command=self._save,
+        ).pack(side="left", fill="x", expand=True, padx=(0, 6))
+        ctk.CTkButton(
+            btns, text="✕ CANCELAR", height=38,
+            font=ctk.CTkFont(size=13, weight="bold"),
+            fg_color=NARANJA_INTENSO, hover_color=HOVER_NARANJA_INT,
+            text_color="white",
+            command=self.destroy,
+        ).pack(side="left", fill="x", expand=True)
+
         body = ctk.CTkFrame(self, fg_color="white", corner_radius=8)
         body.pack(fill="both", expand=True, padx=16, pady=12)
 
@@ -2526,14 +2531,42 @@ class _MovementEditDialog(BaseDialog):
         self.emp_opt.set(current_emp)
         self.emp_opt.pack(fill="x", padx=14)
 
-        _lbl("Cantidad")
-        self.qty_e = ctk.CTkEntry(
-            body, height=36,
-            text_color=AZUL_NOCHE, fg_color=BLANCO_CALIDO,
-            font=ctk.CTkFont(size=13), border_width=1, border_color=AZUL_MARINO,
+        _lbl("Productos")
+        self._qty_entries = {}
+        lista = ctk.CTkScrollableFrame(
+            body, height=150, fg_color=BLANCO_CALIDO,
+            scrollbar_button_color=AZUL_CIELO,
+            scrollbar_button_hover_color=AZUL_CERULEO,
         )
-        self.qty_e.insert(0, str(movement["quantity"] or 1))
-        self.qty_e.pack(fill="x", padx=14)
+        lista.pack(fill="x", padx=14)
+        for item in movement.get("items") or []:
+            fila = ctk.CTkFrame(lista, fg_color=FONDO_SUBHEADER, corner_radius=6)
+            fila.pack(fill="x", pady=2)
+            etiqueta = item["name"] or "—"
+            if item.get("brand"):
+                etiqueta += f" · {item['brand']}"
+            ctk.CTkLabel(
+                fila, text=etiqueta, anchor="w",
+                font=ctk.CTkFont(size=13), text_color=GRIS_AZULADO,
+            ).pack(side="left", fill="x", expand=True, padx=(10, 6), pady=6)
+            if item.get("seriales"):
+                # Unidades seriales: cantidad fija, no se puede editar aquí.
+                ctk.CTkLabel(
+                    fila,
+                    text=f"{item['qty']} {item['unit']} · seriales: {item['seriales']}",
+                    anchor="e", justify="right", wraplength=200,
+                    font=ctk.CTkFont(size=11), text_color=TEXTO_SECUNDARIO,
+                ).pack(side="right", padx=(6, 10))
+            else:
+                entry = ctk.CTkEntry(
+                    fila, width=70, height=30,
+                    text_color=AZUL_NOCHE, fg_color=BLANCO_CALIDO,
+                    font=ctk.CTkFont(size=13), border_width=1,
+                    border_color=AZUL_MARINO, justify="center",
+                )
+                entry.insert(0, str(item["qty"] or 1))
+                entry.pack(side="right", padx=(6, 10), pady=5)
+                self._qty_entries[item["id"]] = entry
 
         _lbl("Notas")
         self.notes_e = ctk.CTkEntry(
@@ -2545,34 +2578,30 @@ class _MovementEditDialog(BaseDialog):
         self.notes_e.insert(0, movement.get("notes") or "")
         self.notes_e.pack(fill="x", padx=14, pady=(0, 10))
 
-        btns = ctk.CTkFrame(self, fg_color=BLANCO_CALIDO)
-        btns.pack(fill="x", padx=16, pady=(0, 12))
-        ctk.CTkButton(
-            btns, text="✓ GUARDAR", height=38,
-            font=ctk.CTkFont(size=13, weight="bold"),
-            fg_color=AZUL_MARINO, hover_color=AZUL_NOCHE, text_color="white",
-            command=self._save,
-        ).pack(side="left", fill="x", expand=True, padx=(0, 6))
-        ctk.CTkButton(
-            btns, text="✕ CANCELAR", height=38,
-            font=ctk.CTkFont(size=13, weight="bold"),
-            fg_color=NARANJA_INTENSO, hover_color=HOVER_NARANJA_INT,
-            text_color="white",
-            command=self.destroy,
-        ).pack(side="left", fill="x", expand=True)
+        # La lista de ítems puede crecer: el alto se calcula del contenido
+        # real para que la botonera nunca quede fuera.
+        self.update_idletasks()
+        alto = min(
+            max(480, self.winfo_reqheight()),
+            self.winfo_screenheight() - 100,
+        )
+        self.geometry(f"500x{alto}")
 
         show_centered(self)
         self.after(50, self.grab_set)
 
     def _save(self):
-        try:
-            qty = int(self.qty_e.get().strip() or 1)
-        except ValueError:
-            MessageDialog(self, "Aviso", "Cantidad inválida.")
-            return
-        if qty < 1:
-            MessageDialog(self, "Aviso", "La cantidad debe ser mayor a 0.")
-            return
+        item_updates = []
+        for item_id, entry in self._qty_entries.items():
+            try:
+                qty = int(entry.get().strip() or 1)
+            except ValueError:
+                MessageDialog(self, "Aviso", "Cantidad inválida.")
+                return
+            if qty < 1:
+                MessageDialog(self, "Aviso", "La cantidad debe ser mayor a 0.")
+                return
+            item_updates.append({"item_id": item_id, "qty": qty})
         emp_text = self.emp_opt.get()
         emp_id = None
         if emp_text != "Ninguno":
@@ -2586,8 +2615,8 @@ class _MovementEditDialog(BaseDialog):
                 self._movement["id"],
                 self.type_opt.get(),
                 emp_id,
-                qty,
                 self.notes_e.get().strip(),
+                item_updates=item_updates,
             )
         except ValueError as e:
             MessageDialog(self, "Error", str(e), is_error=True)

@@ -85,14 +85,20 @@ def test_simple_movement_edit_y_delete_revierte(db, q):
     mid = _last_movement(q)
     assert _stock(q, db["qty_pid"]) == 25
 
-    repo.update_movement(mid, "salida", None, 3, "edit")
+    item_id = q(
+        "SELECT id FROM movement_items WHERE movement_id=?", (mid,)
+    )[0]["id"]
+    repo.update_movement(
+        mid, "salida", None, "edit",
+        item_updates=[{"item_id": item_id, "qty": 3}],
+    )
     assert _stock(q, db["qty_pid"]) == 17
 
     repo.delete_movement(mid)
     assert _stock(q, db["qty_pid"]) == 20
 
 
-def test_no_editar_movimiento_compuesto(db, q):
+def test_get_movement_devuelve_los_items(db, q):
     repo = db["repo"]
     mid = repo.create_compound_movement(
         "salida", db["user_id"],
@@ -104,8 +110,94 @@ def test_no_editar_movimiento_compuesto(db, q):
         ],
         warehouse_id=db["wh_id"],
     )
+    mov = repo.get_movement(mid)
+    assert len(mov["items"]) == 2
+    assert all("id" in it for it in mov["items"])
+
+
+def test_editar_compuesto_ajusta_solo_items_sin_seriales(db, q):
+    repo = db["repo"]
+    mid = repo.create_compound_movement(
+        "salida", db["user_id"],
+        [
+            {"name": "Router", "brand": "TPLink", "qty": 2, "unit": "und",
+             "kind": "quantity"},
+            {"name": "Switch", "brand": "Cisco", "qty": 1, "unit": "und",
+             "kind": "serial"},
+        ],
+        warehouse_id=db["wh_id"],
+    )
+    assert _stock(q, db["qty_pid"]) == 18
+
+    items = q(
+        "SELECT id, qty, seriales FROM movement_items "
+        "WHERE movement_id=? ORDER BY id",
+        (mid,),
+    )
+    qty_item = next(i for i in items if not i["seriales"])
+    serial_item = next(i for i in items if i["seriales"])
+
+    repo.update_movement(
+        mid, "salida", None, "edit",
+        item_updates=[
+            {"item_id": qty_item["id"], "qty": 5},
+            # El ítem con seriales se ignora aunque venga en la lista.
+            {"item_id": serial_item["id"], "qty": 99},
+        ],
+    )
+
+    assert _stock(q, db["qty_pid"]) == 15
+    assert q(
+        "SELECT qty FROM movement_items WHERE id=?", (serial_item["id"],)
+    )[0]["qty"] == 1
+    assert q(
+        "SELECT quantity FROM movements WHERE id=?", (mid,)
+    )[0]["quantity"] == 6
+
+
+def test_editar_compuesto_sin_stock_hace_rollback_total(db, q):
+    repo = db["repo"]
+    cable_pid = repo.create_product(
+        "Cable", "BC-CABLE", "Gen", "", "", 50, None, "m",
+        warehouse_id=db["wh_id"],
+    )
+    mid = repo.create_compound_movement(
+        "devolucion", db["user_id"],
+        [
+            {"name": "Router", "brand": "TPLink", "qty": 2, "unit": "und",
+             "kind": "quantity"},
+            {"name": "Cable", "brand": "Gen", "qty": 5, "unit": "m",
+             "kind": "quantity"},
+        ],
+        warehouse_id=db["wh_id"],
+    )
+    assert _stock(q, db["qty_pid"]) == 22
+    assert _stock(q, cable_pid) == 55
+
+    items = q(
+        "SELECT id, name FROM movement_items WHERE movement_id=? ORDER BY id",
+        (mid,),
+    )
+    updates = []
+    for it in items:
+        qty = 1 if it["name"] == "Router" else 999  # Cable no alcanza
+        updates.append({"item_id": it["id"], "qty": qty})
+
     with pytest.raises(ValueError):
-        repo.update_movement(mid, "salida", None, 2, "x")
+        repo.update_movement(mid, "salida", None, "x", item_updates=updates)
+
+    # Todo o nada: ni stock, ni tipo, ni cantidades cambiaron.
+    assert _stock(q, db["qty_pid"]) == 22
+    assert _stock(q, cable_pid) == 55
+    assert q(
+        "SELECT type, quantity FROM movements WHERE id=?", (mid,)
+    )[0]["type"] == "devolucion"
+    assert {
+        r["name"]: r["qty"]
+        for r in q(
+            "SELECT name, qty FROM movement_items WHERE movement_id=?", (mid,)
+        )
+    } == {"Router": 2, "Cable": 5}
 
 
 def test_bulk_create_products_genera_un_solo_movimiento(db, q):

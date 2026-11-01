@@ -1225,7 +1225,17 @@ def get_movement(movement_id):
             """,
             (movement_id,),
         ).fetchone()
-        return _clean_row_product(row) if row else None
+        if row is None:
+            return None
+        detail = _clean_row_product(row)
+        items = conn.execute(
+            "SELECT id, name, COALESCE(brand,'') AS brand, qty, unit, "
+            "COALESCE(seriales,'') AS seriales FROM movement_items "
+            "WHERE movement_id=? ORDER BY id",
+            (movement_id,),
+        ).fetchall()
+        detail["items"] = [dict(i) for i in items]
+        return detail
     finally:
         conn.close()
 
@@ -1354,80 +1364,73 @@ def create_movement(type_, product_id, employee_id, user_id, quantity, notes,
         conn.close()
 
 
-def update_movement(movement_id, type_, employee_id, quantity, notes):
-    """Edita un movimiento existente y reajusta el stock del producto."""
+def update_movement(movement_id, type_, employee_id, notes, item_updates=None):
+    """Edita un movimiento (de 1 o varios productos) y reajusta el stock.
+
+    item_updates: lista de {"item_id": id, "qty": nueva_cantidad} para los
+    ítems sin seriales cuya cantidad cambia. Los ítems con seriales mantienen
+    su cantidad (no se pueden agregar/quitar seriales desde aquí)."""
     conn = get_connection()
     try:
-        cursor = conn.cursor()
         old = conn.execute(
             "SELECT * FROM movements WHERE id=?", (movement_id,)
         ).fetchone()
         if not old:
             raise ValueError("El movimiento no existe.")
 
-        item_count = conn.execute(
-            "SELECT COUNT(*) FROM movement_items WHERE movement_id=?", (movement_id,)
-        ).fetchone()[0]
-        if item_count > 1 or old["product_id"] in (0, None):
+        rows = conn.execute(
+            "SELECT id, product_id, name, COALESCE(brand,'') AS brand, qty, "
+            "unit, COALESCE(seriales,'') AS seriales FROM movement_items "
+            "WHERE movement_id=? ORDER BY id",
+            (movement_id,),
+        ).fetchall()
+        if not rows:
             raise ValueError(
-                "Los movimientos con varios productos no se pueden editar. "
-                "Elimínalo y regístralo de nuevo."
+                "Este movimiento no tiene ítems registrados y no se puede editar."
             )
 
-        old_type = old["type"]
-        old_qty = old["quantity"] or 1
-        new_qty = quantity or 1
-        product_id = old["product_id"]
+        old_items = [dict(r) for r in rows]
+        new_items = [dict(r) for r in rows]
+        updates_by_id = {u["item_id"]: u["qty"] for u in (item_updates or [])}
+        for it in new_items:
+            if it["seriales"]:
+                continue  # cantidad fija, no editable
+            if it["id"] in updates_by_id:
+                new_q = int(updates_by_id[it["id"]])
+                if new_q < 1:
+                    raise ValueError(f"Cantidad inválida para '{it['name']}'.")
+                it["qty"] = new_q
 
-        # Revertir efecto del movimiento anterior
-        if old_type in ("entrada", "devolucion"):
-            revert = -old_qty
-        elif old_type in ("salida", "asignacion"):
-            revert = old_qty
-        else:
-            revert = 0
+        # 1. Revertir el efecto del movimiento viejo (cantidades viejas)
+        revert_movement_stock(conn, {"type": old["type"]}, old_items)
 
-        if revert != 0:
-            cursor.execute(
-                "UPDATE products SET quantity = quantity + ?, updated_at=datetime('now','localtime') WHERE id=?",
-                (revert, product_id),
-            )
-
-        # Validar stock si el nuevo movimiento es salida/asignacion
+        # 2. Si el nuevo tipo descuenta stock, validar cada ítem sin seriales
         if type_ in ("salida", "asignacion"):
-            current = conn.execute(
-                "SELECT quantity FROM products WHERE id=?", (product_id,)
-            ).fetchone()
-            if current and current["quantity"] < new_qty:
-                raise ValueError(
-                    f"Stock insuficiente: disponible {current['quantity']}, solicitado {new_qty}"
-                )
+            for it in new_items:
+                if it["seriales"]:
+                    continue
+                cur = conn.execute(
+                    "SELECT quantity FROM products WHERE id=?", (it["product_id"],)
+                ).fetchone()
+                if cur and cur["quantity"] < it["qty"]:
+                    raise ValueError(
+                        f"Stock insuficiente de '{it['name']}': "
+                        f"disponible {cur['quantity']}, solicitado {it['qty']}"
+                    )
 
-        # Aplicar efecto del nuevo movimiento
-        if type_ in ("entrada", "devolucion"):
-            apply = new_qty
-        elif type_ in ("salida", "asignacion"):
-            apply = -new_qty
-        else:
-            apply = 0
+        # 3. Aplicar el efecto del movimiento nuevo (cantidades nuevas)
+        apply_movement_stock(conn, type_, new_items)
 
-        if apply != 0:
-            cursor.execute(
-                "UPDATE products SET quantity = quantity + ?, updated_at=datetime('now','localtime') WHERE id=?",
-                (apply, product_id),
-            )
-
-        cursor.execute(
+        total_qty = sum(it["qty"] for it in new_items)
+        conn.execute(
             """UPDATE movements SET type=?, employee_id=?, quantity=?, notes=?
                WHERE id=?""",
-            (type_, employee_id or None, new_qty, notes or "", movement_id),
+            (type_, employee_id or None, total_qty, notes or "", movement_id),
         )
-        # Mantener sincronizado el ítem (los simples tienen uno solo) para que
-        # una futura eliminación revierta la cantidad correcta.
-        cursor.execute(
-            "UPDATE movement_items SET qty=? WHERE movement_id=?",
-            (new_qty, movement_id),
-        )
+        for it in new_items:
+            conn.execute(
+                "UPDATE movement_items SET qty=? WHERE id=?", (it["qty"], it["id"])
+            )
 
         conn.commit()
         _invalidate_prefix("units_by_model")
@@ -1965,6 +1968,38 @@ def revert_movement_stock(conn, movement, items):
                 )
             else:
                 _adjust_product_stock(conn, pid, it["name"], it.get("brand") or "", -qty)
+
+
+def apply_movement_stock(conn, type_, items):
+    """Aplica el efecto en stock de un movimiento usando sus ítems (espejo
+    de revert_movement_stock: donde revertir repone, aplicar descuenta, y
+    viceversa)."""
+    for it in items:
+        pid = it.get("product_id")
+        qty = it.get("qty") or 1
+        seriales = [
+            s.strip() for s in (it.get("seriales") or "").split(",") if s.strip()
+        ]
+        if type_ in ("salida", "asignacion"):
+            if seriales:
+                ph = ",".join("?" for _ in seriales)
+                conn.execute(
+                    "UPDATE products SET status='no disponible', "
+                    f"updated_at=datetime('now','localtime') WHERE serial IN ({ph})",
+                    seriales,
+                )
+            else:
+                _adjust_product_stock(conn, pid, it["name"], it.get("brand") or "", -qty)
+        elif type_ in ("entrada", "devolucion"):
+            if seriales:
+                ph = ",".join("?" for _ in seriales)
+                conn.execute(
+                    "UPDATE products SET status='disponible', "
+                    f"updated_at=datetime('now','localtime') WHERE serial IN ({ph})",
+                    seriales,
+                )
+            else:
+                _adjust_product_stock(conn, pid, it["name"], it.get("brand") or "", +qty)
 
 
 def get_products_brief(ids):
