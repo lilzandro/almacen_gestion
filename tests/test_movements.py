@@ -314,3 +314,15 @@ def test_bulk_create_products_todos_duplicados_no_crea_movimiento(db, q):
     assert duplicados
     assert q("SELECT COUNT(*) c FROM movements")[0]["c"] == antes
 
+
+
+def test_get_movements_flat_filtra_por_lista_de_ids(db, q):
+    repo = db["repo"]
+    repo.create_movement("entrada", db["qty_pid"], None, db["user_id"], 1, "uno")
+    m1 = q("SELECT id FROM movements ORDER BY id DESC LIMIT 1")[0]["id"]
+    repo.create_movement("entrada", db["qty_pid"], None, db["user_id"], 1, "dos")
+    m2 = q("SELECT id FROM movements ORDER BY id DESC LIMIT 1")[0]["id"]
+    repo.create_movement("entrada", db["qty_pid"], None, db["user_id"], 1, "tres")
+
+    rows = repo.get_movements_flat(ids=[m1, m2])
+    assert {r["id"] for r in rows} == {m1, m2}

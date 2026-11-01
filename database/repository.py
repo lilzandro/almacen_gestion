@@ -1046,11 +1046,15 @@ JOIN users u ON m.user_id = u.id
 
 
 def _movement_filters(search="", movement_types=None, warehouse_id=None,
-                      date_from=None, date_to=None):
+                      date_from=None, date_to=None, ids=None):
     """Construye el WHERE (y params) común: búsqueda sobre producto/empleado/notas,
-    lista de tipos reales, almacén y rango de fechas ('YYYY-MM-DD')."""
+    lista de tipos reales, almacén, rango de fechas ('YYYY-MM-DD') e ids."""
     clauses = []
     params = []
+    if ids:
+        ph = ",".join("?" for _ in ids)
+        clauses.append(f"m.id IN ({ph})")
+        params.extend(ids)
     if search:
         q = f"%{search}%"
         clauses.append(
@@ -1186,12 +1190,12 @@ def _format_quantity_summary(item_count, unit_totals, quantity):
 
 
 def get_movements_flat(warehouse_id=None, search="", movement_types=None,
-                       limit=1000000, date_from=None, date_to=None):
+                       limit=1000000, date_from=None, date_to=None, ids=None):
     """Todos los movimientos filtrados (sin paginar), p. ej. para exportar."""
     conn = get_connection()
     try:
         where, params = _movement_filters(
-            search, movement_types, warehouse_id, date_from, date_to
+            search, movement_types, warehouse_id, date_from, date_to, ids
         )
         rows = conn.execute(
             _MOVEMENTS_SELECT + f" WHERE {where} ORDER BY m.id DESC LIMIT ?",
