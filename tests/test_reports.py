@@ -411,3 +411,127 @@ def test_receipt_signature_for_solo_salida_y_devolucion():
     )
     assert receipt_signature_for("entrada") is None
     assert receipt_signature_for("asignacion") is None
+
+
+def test_send_report_whatsapp_sin_credenciales_avisa(monkeypatch):
+    from core.whatsapp_report import send_report_whatsapp
+
+    for key in ("WHATSAPP_TOKEN", "WHATSAPP_PHONE_ID", "WHATSAPP_TO"):
+        monkeypatch.delenv(key, raising=False)
+    with pytest.raises(RuntimeError, match="WHATSAPP_TOKEN"):
+        send_report_whatsapp("x.pdf")
+
+
+def test_send_report_whatsapp_con_credenciales_parciales_avisa(monkeypatch):
+    from core.whatsapp_report import send_report_whatsapp
+
+    monkeypatch.setenv("WHATSAPP_TOKEN", "TOKEN")
+    monkeypatch.setenv("WHATSAPP_PHONE_ID", "111222333")
+    monkeypatch.delenv("WHATSAPP_TO", raising=False)
+    with pytest.raises(RuntimeError, match="WHATSAPP_TO"):
+        send_report_whatsapp("x.pdf")
+
+
+def test_send_report_whatsapp_envia_documento(tmp_path, monkeypatch):
+    import core.whatsapp_report as whatsapp_report
+
+    pdf = tmp_path / "reporte.pdf"
+    pdf.write_bytes(b"%PDF-1.4 contenido de prueba")
+    monkeypatch.setenv("WHATSAPP_TOKEN", "TOKEN")
+    monkeypatch.setenv("WHATSAPP_PHONE_ID", "111222333")
+    monkeypatch.setenv("WHATSAPP_TO", "584121234567")
+
+    calls = []
+
+    class FakeResponse:
+        def __init__(self, body):
+            self._body = body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return self._body
+
+    def fake_urlopen(req, timeout=0):
+        calls.append(req)
+        if len(calls) == 1:
+            return FakeResponse(b'{"id": "MEDIA123"}')
+        return FakeResponse(b'{"messages": [{"id": "wamid.ABC"}]}')
+
+    monkeypatch.setattr(whatsapp_report.urllib.request, "urlopen", fake_urlopen)
+    whatsapp_report.send_report_whatsapp(str(pdf), "Reporte")
+
+    assert len(calls) == 2
+    upload_req, send_req = calls
+    assert upload_req.full_url == (
+        "https://graph.facebook.com/v22.0/111222333/media"
+    )
+    assert b'name="file"' in upload_req.data
+    assert pdf.read_bytes() in upload_req.data
+    assert upload_req.headers["Authorization"] == "Bearer TOKEN"
+
+    assert send_req.full_url == (
+        "https://graph.facebook.com/v22.0/111222333/messages"
+    )
+    import json
+    payload = json.loads(send_req.data)
+    assert payload["to"] == "584121234567"
+    assert payload["type"] == "document"
+    assert payload["document"]["id"] == "MEDIA123"
+    assert payload["document"]["caption"] == "Reporte"
+
+
+class _FakeResponse:
+    def __init__(self, body):
+        self._body = body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def read(self):
+        return self._body
+
+
+def _whatsapp_env(monkeypatch):
+    monkeypatch.setenv("WHATSAPP_TOKEN", "TOKEN")
+    monkeypatch.setenv("WHATSAPP_PHONE_ID", "111222333")
+    monkeypatch.setenv("WHATSAPP_TO", "584121234567")
+
+
+def test_send_report_whatsapp_rechazo_de_subida(tmp_path, monkeypatch):
+    import core.whatsapp_report as whatsapp_report
+
+    _whatsapp_env(monkeypatch)
+    pdf = tmp_path / "r.pdf"
+    pdf.write_bytes(b"x")
+    monkeypatch.setattr(
+        whatsapp_report.urllib.request, "urlopen",
+        lambda req, timeout=0: _FakeResponse(b'{"error": {"message": "bad"}}'),
+    )
+    with pytest.raises(RuntimeError, match="subida"):
+        whatsapp_report.send_report_whatsapp(str(pdf))
+
+
+def test_send_report_whatsapp_rechazo_de_envio(tmp_path, monkeypatch):
+    import core.whatsapp_report as whatsapp_report
+
+    _whatsapp_env(monkeypatch)
+    pdf = tmp_path / "r.pdf"
+    pdf.write_bytes(b"x")
+    responses = [
+        _FakeResponse(b'{"id": "MEDIA123"}'),
+        _FakeResponse(b'{"error": {"message": "ventana 24h"}}'),
+    ]
+    monkeypatch.setattr(
+        whatsapp_report.urllib.request, "urlopen",
+        lambda req, timeout=0: responses.pop(0),
+    )
+    with pytest.raises(RuntimeError, match="envío"):
+        whatsapp_report.send_report_whatsapp(str(pdf))
