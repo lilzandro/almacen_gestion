@@ -480,6 +480,7 @@ class MovementsView(ctk.CTkFrame):
         self._filters_expanded = True
         self._resize_job = None
         self._card_last_w = 0
+        self._row_btn_sync_job = None
         self._ctx_id = None
         self._last_sub = None
         self._last_hint = None
@@ -691,7 +692,7 @@ class MovementsView(ctk.CTkFrame):
         self._tree.bind("<Motion>", self._on_motion)
         self._tree.bind("<Button-3>", self._on_right_click)
         for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>", "<KeyRelease>"):
-            self._tree.bind(seq, self._queue_row_button_sync, add="+")
+            self._tree.bind(seq, self._sync_row_buttons_soon, add="+")
         self._tree.bind("<Configure>", self._queue_row_button_sync, add="+")
         self._tree.bind("<Delete>", self._on_delete_key)
         self._tree.bind("<<TreeviewSelect>>", self._on_tree_select)
@@ -1076,6 +1077,17 @@ class MovementsView(ctk.CTkFrame):
 
     # ── botones reales de acciones por fila (overlay sobre el Treeview) ──
     def _queue_row_button_sync(self, _event=None):
+        """Debounce para la ráfaga de <Configure> al maximizar/redimensionar."""
+        if self._row_btn_sync_job:
+            self.after_cancel(self._row_btn_sync_job)
+        self._row_btn_sync_job = self.after(150, self._do_row_button_sync)
+
+    def _do_row_button_sync(self):
+        self._row_btn_sync_job = None
+        self._sync_row_buttons()
+
+    def _sync_row_buttons_soon(self, _event=None):
+        """Scroll/teclado: sync inmediato, sin demora perceptible."""
         self.after_idle(self._sync_row_buttons)
 
     def _on_scroll(self, *args):

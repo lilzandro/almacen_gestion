@@ -222,3 +222,61 @@ def test_sync_row_buttons_reintenta_si_la_columna_acc_no_tiene_su_ancho_real():
 
     MovementsView._sync_row_buttons(_View())
     assert calls == [60]
+
+
+def test_queue_row_button_sync_debouncea_la_rafaga_de_configure():
+    """Varios <Configure> seguidos (maximizar) deben dejar un solo sync."""
+    from ui.views.movements import MovementsView
+
+    calls, cancelled, synced = [], [], []
+
+    class _View:
+        _row_btn_sync_job = "job-1"
+
+        def after_cancel(self, job):
+            cancelled.append(job)
+
+        def after(self, ms, fn):
+            calls.append((ms, fn))
+            return "job-2"
+
+        def after_idle(self, fn):
+            calls.append(("idle", fn))
+
+        def _sync_row_buttons(self):
+            synced.append(True)
+
+    _View._queue_row_button_sync = MovementsView._queue_row_button_sync
+    _View._do_row_button_sync = MovementsView._do_row_button_sync
+    view = _View()
+
+    MovementsView._queue_row_button_sync(view)
+
+    assert cancelled == ["job-1"]
+    assert len(calls) == 1
+    assert calls[0][0] == 150
+
+    view._row_btn_sync_job = "job-2"
+    calls[0][1]()
+    assert synced == [True]
+    assert view._row_btn_sync_job is None
+
+
+def test_rueda_y_teclado_siguen_sincronizando_sin_demora():
+    """El debounce es solo para <Configure>; scroll/teclado usan after_idle."""
+    from ui.views.movements import MovementsView
+
+    calls = []
+
+    class _View:
+        def after_idle(self, fn):
+            calls.append(fn)
+
+        def _sync_row_buttons(self):
+            pass
+
+    _View._sync_row_buttons_soon = MovementsView._sync_row_buttons_soon
+    view = _View()
+
+    assert MovementsView._sync_row_buttons_soon(view) is None
+    assert calls == [view._sync_row_buttons]
