@@ -72,8 +72,8 @@ def setup_treeview_style():
         background="white",
         foreground=AZUL_NOCHE,
         fieldbackground="white",
-        rowheight=32,
-        font=("Segoe UI", 12),
+        rowheight=round(32 * UI_SCALE),
+        font=("Segoe UI", round(12 * UI_SCALE)),
         borderwidth=0,
         relief="flat",
         indent=15,
@@ -83,7 +83,7 @@ def setup_treeview_style():
         "Inv.Treeview.Heading",
         background=AZUL_MARINO,
         foreground="white",
-        font=("Segoe UI", 12, "bold"),
+        font=("Segoe UI", round(12 * UI_SCALE), "bold"),
         relief="flat",
     )
     style.map(

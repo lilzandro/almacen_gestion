@@ -1,5 +1,10 @@
 # Paleta de colores del sistema DigiCable
 
+# === ESCALA GLOBAL DE UI ===
+# Único factor para lo que escala CustomTkinter solo (set_widget_scaling) y
+# para lo que no: ttk.Treeview y tk.Label con tamaños en píxeles literales.
+UI_SCALE = 1.3
+
 # === PALETA PRINCIPAL ===
 AZUL_NOCHE = "#031D44"
 AZUL_MARINO = "#084887"

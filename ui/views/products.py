@@ -41,6 +41,7 @@ from ui.colors import (
     SELECCION_BG,
     HOVER_FILA_BG,
     CHEVRON_HOVER,
+    UI_SCALE,
 )
 from ui.widgets import (
     BaseDialog,
@@ -206,6 +207,10 @@ def _format_fecha(raw):
 # Anchos de columna de la tabla de grupos (px). La col 6 (acciones) es
 # flexible para ocupar el sobrante y anclar el botón a la derecha.
 _TABLE_COLS = (50, 240, 150, 120, 190, 180, 140)
+
+# Tamaño de los tk.Label con fuente literal (no escalan con CTk). Se usa
+# tanto al dibujar como al pre-recortar con _fit_px para que midan igual.
+_LABEL_SIZE = round(15 * UI_SCALE)
 
 
 def _setup_table_cols(frame):
@@ -431,7 +436,7 @@ class ProductsView(ctk.CTkFrame):
                 text=text,
                 bg=AZUL_MARINO,
                 fg="white",
-                font=("Segoe UI", 15, "bold"),
+                font=("Segoe UI", _LABEL_SIZE, "bold"),
                 anchor="center",
             ).grid(row=0, column=col, sticky="ew", padx=px, pady=4)
 
@@ -1296,12 +1301,12 @@ class _GroupRow(ctk.CTkFrame):
 
         # Col 1: modelo (pre-recortado para no ensanchar la columna fija)
         modelo_txt = _fit_px(
-            self.data["name"], _TABLE_COLS[1] - 16, 15, "bold"
+            self.data["name"], _TABLE_COLS[1] - 16, _LABEL_SIZE, "bold"
         )
         lbl = tk.Label(
             inner,
             text=modelo_txt,
-            font=("Segoe UI", 15, "bold"),
+            font=("Segoe UI", _LABEL_SIZE, "bold"),
             fg=TEXTO_MODELO,
             bg=self._bg,
             anchor="center",
@@ -1311,12 +1316,12 @@ class _GroupRow(ctk.CTkFrame):
 
         # Col 2: marca (texto pre-recortado para no ensanchar la columna fija)
         marca_txt = _fit_px(
-            self.data["brand"] or "—", _TABLE_COLS[2] - 16, 15, "normal"
+            self.data["brand"] or "—", _TABLE_COLS[2] - 16, _LABEL_SIZE, "normal"
         )
         lbl = tk.Label(
             inner,
             text=marca_txt,
-            font=("Segoe UI", 15),
+            font=("Segoe UI", _LABEL_SIZE),
             fg=TEXTO_MODELO,
             bg=self._bg,
             anchor="center",
@@ -1344,7 +1349,9 @@ class _GroupRow(ctk.CTkFrame):
         hold3 = tk.Frame(inner, bg=self._bg, width=_TABLE_COLS[3], height=44)
         hold3.pack_propagate(False)
         hold3.grid(row=0, column=3, padx=(0, 0), sticky="w")
-        badge_txt = _fit_px(f"{count}  {unit}", _TABLE_COLS[3] - 28, 15, "bold")
+        badge_txt = _fit_px(
+            f"{count}  {unit}", _TABLE_COLS[3] - 28, _LABEL_SIZE, "bold"
+        )
         badge = ctk.CTkLabel(
             hold3,
             text=badge_txt,
@@ -1379,7 +1386,7 @@ class _GroupRow(ctk.CTkFrame):
         hold4 = tk.Frame(inner, bg=self._bg, width=_TABLE_COLS[4], height=44)
         hold4.pack_propagate(False)
         hold4.grid(row=0, column=4, padx=(0, 0), sticky="w")
-        stock_txt = _fit_px(stock_txt, _TABLE_COLS[4] - 52, 15, "bold")
+        stock_txt = _fit_px(stock_txt, _TABLE_COLS[4] - 52, _LABEL_SIZE, "bold")
         pill = ctk.CTkFrame(hold4, fg_color=stock_bg, corner_radius=12)
         pill.place(relx=0.5, rely=0.5, anchor="center")
         ctk.CTkLabel(
@@ -1395,12 +1402,12 @@ class _GroupRow(ctk.CTkFrame):
 
         # Col 5: proveedor (texto pre-recortado para no ensanchar la columna)
         sup_txt = _fit_px(
-            self.data["supplier_name"] or "—", _TABLE_COLS[5] - 16, 15, "normal"
+            self.data["supplier_name"] or "—", _TABLE_COLS[5] - 16, _LABEL_SIZE, "normal"
         )
         lbl = tk.Label(
             inner,
             text=sup_txt,
-            font=("Segoe UI", 15),
+            font=("Segoe UI", _LABEL_SIZE),
             fg=TEXTO_SECUNDARIO,
             bg=self._bg,
             anchor="center",

@@ -7,11 +7,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import customtkinter as ctk
 from database.connection import initialize_db
 from ui.app import App
+from ui.colors import UI_SCALE
 
 if __name__ == "__main__":
     initialize_db()
     ctk.set_appearance_mode("light")
     ctk.set_default_color_theme("blue")
-    ctk.set_widget_scaling(1.15)
+    ctk.set_widget_scaling(UI_SCALE)
     app = App()
     app.mainloop()

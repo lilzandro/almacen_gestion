@@ -1773,7 +1773,7 @@ class _SearchableMultiSelect(ctk.CTkFrame):
                 text="☑" if selected else "☐",
                 bg=bg,
                 fg=AZUL_MARINO if selected else GRIS_AZULADO,
-                font=(sans, 15),
+                font=(sans, round(15 * UI_SCALE)),
             )
             mark.pack(side="left", padx=(6, 4))
 
@@ -1782,7 +1782,7 @@ class _SearchableMultiSelect(ctk.CTkFrame):
                 text=self._item_label(item)[:40],
                 bg=bg,
                 fg=TEXTO_MOV_FIELD,
-                font=(sans, 12),
+                font=(sans, round(12 * UI_SCALE)),
                 anchor="w",
             )
             name.pack(side="left", fill="x", expand=True)
@@ -1793,7 +1793,7 @@ class _SearchableMultiSelect(ctk.CTkFrame):
                     text=str(item.get("unit") or "und"),
                     bg=bg,
                     fg=GRIS_AZULADO,
-                    font=(sans, 11, "bold"),
+                    font=(sans, round(11 * UI_SCALE), "bold"),
                 )
                 unit.pack(side="right", padx=(0, 6))
                 qty_entry = tk.Entry(
@@ -1810,7 +1810,7 @@ class _SearchableMultiSelect(ctk.CTkFrame):
                     text=self._right_text_fn(item),
                     bg=FONDO_MULTI_QTY,
                     fg=GRIS_AZULADO,
-                    font=(sans, 11),
+                    font=(sans, round(11 * UI_SCALE)),
                     padx=6,
                 )
                 chip.pack(side="right", padx=(0, 4), pady=3)
