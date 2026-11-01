@@ -414,3 +414,12 @@ def test_reporte_de_seleccion_genera_pdf_con_los_ids(monkeypatch):
     finally:
         dlg.destroy()
         root.destroy()
+
+
+def test_clic_derecho_ya_no_dispara_menu_contextual():
+    """Tras quitar _ctx_menu, la clase no debe tener rastros del mecanismo viejo."""
+    from ui.views.movements import MovementsView
+
+    assert not hasattr(MovementsView, "_on_right_click")
+    assert not hasattr(MovementsView, "_edit_ctx")
+    assert not hasattr(MovementsView, "_delete_ctx")

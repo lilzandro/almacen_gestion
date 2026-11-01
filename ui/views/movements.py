@@ -562,7 +562,6 @@ class MovementsView(ctk.CTkFrame):
         self._filters_expanded = True
         self._resize_job = None
         self._card_last_w = 0
-        self._ctx_id = None
         self._last_sub = None
         self._last_hint = None
         self._last_footer = None
@@ -769,15 +768,8 @@ class MovementsView(ctk.CTkFrame):
 
         # Interacciones de la tabla
         self._tree.bind("<Double-1>", self._on_double_click)
-        self._tree.bind("<Button-3>", self._on_right_click)
         self._tree.bind("<Delete>", self._on_delete_key)
         self._tree.bind("<<TreeviewSelect>>", self._on_tree_select)
-        self._ctx_menu = tk.Menu(self, tearoff=0, font=self._fonts["sub"])
-        self._ctx_menu.add_command(label="✎ Editar", command=self._edit_ctx)
-        self._ctx_menu.add_separator()
-        self._ctx_menu.add_command(
-            label="✕ Eliminar", foreground=DSG_DANGER, command=self._delete_ctx
-        )
 
         self._widgets_built = True
         self.after(40, lambda: self._ensure_widths(0))
@@ -1165,27 +1157,12 @@ class MovementsView(ctk.CTkFrame):
             on_delete=(lambda m=mid: self._delete_movement(m)) if is_admin else None,
         )
 
-    def _on_right_click(self, event):
-        iid = self._tree.identify_row(event.y)
-        if not iid:
-            return
-        self._ctx_id = int(iid)
-        self._ctx_menu.post(event.x_root, event.y_root)
-
     def _on_delete_key(self, event):
         sel = self._tree.selection()
         if not sel:
             return "break"
         self._delete_movement(int(sel[0]))
         return "break"
-
-    def _edit_ctx(self):
-        if self._ctx_id is not None:
-            self._edit_movement(self._ctx_id)
-
-    def _delete_ctx(self):
-        if self._ctx_id is not None:
-            self._delete_movement(self._ctx_id)
 
     def _edit_movement(self, mid):
         if self.current_user.get("role") != "admin":
