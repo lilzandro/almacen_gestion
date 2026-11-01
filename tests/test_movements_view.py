@@ -423,3 +423,70 @@ def test_clic_derecho_ya_no_dispara_menu_contextual():
     assert not hasattr(MovementsView, "_on_right_click")
     assert not hasattr(MovementsView, "_edit_ctx")
     assert not hasattr(MovementsView, "_delete_ctx")
+
+
+def test_on_tree_select_resalta_sin_importar_el_orden_de_clic():
+    """Ctrl+clic en la fila 5 y luego en la 2 (orden 'hacia atrás') debe
+    resaltar ambas igual que si se hubiera hecho en orden ascendente —
+    _on_tree_select no debe depender del orden de selection()."""
+    from ui.views.movements import MovementsView
+
+    tagged = {}
+
+    class _Tree:
+        def get_children(self):
+            return ["1", "2", "3", "4", "5"]
+
+        def exists(self, iid):
+            return True
+
+        def selection(self):
+            # Tkinter puede devolver la selección en cualquier orden interno;
+            # aquí se simula deliberadamente "5 antes que 2" para probar que
+            # el método no asume orden ascendente.
+            return ("5", "2")
+
+        def item(self, iid, tags=None):
+            tagged[iid] = tags[0]
+
+    class _View:
+        _tree = _Tree()
+        _row_tag_for_index = MovementsView._row_tag_for_index
+
+    MovementsView._on_tree_select(_View())
+    assert tagged["2"] == "sel"
+    assert tagged["5"] == "sel"
+    assert tagged["1"] != "sel"
+    assert tagged["3"] != "sel"
+    assert tagged["4"] != "sel"
+
+
+def test_on_tree_select_deselecciona_fila_que_sale_de_selection():
+    """Si una fila deja de estar en selection() (el usuario la deselecciona
+    con otro Ctrl+clic), debe volver a su tag zebra normal, no quedar
+    marcada 'sel' para siempre."""
+    from ui.views.movements import MovementsView
+
+    tagged = {}
+
+    class _Tree:
+        def get_children(self):
+            return ["1", "2", "3"]
+
+        def exists(self, iid):
+            return True
+
+        def selection(self):
+            return ("1",)  # "2" ya no está seleccionada
+
+        def item(self, iid, tags=None):
+            tagged[iid] = tags[0]
+
+    class _View:
+        _tree = _Tree()
+        _row_tag_for_index = MovementsView._row_tag_for_index
+
+    MovementsView._on_tree_select(_View())
+    assert tagged["1"] == "sel"
+    assert tagged["2"] != "sel"
+    assert tagged["3"] != "sel"
