@@ -220,3 +220,31 @@ def test_editar_movimiento_la_ventana_entra_el_contenido_real(monkeypatch):
         )
     finally:
         root.destroy()
+
+
+def test_on_tree_select_resalta_todas_las_filas_seleccionadas():
+    from ui.views.movements import MovementsView
+
+    tagged = {}
+
+    class _Tree:
+        def get_children(self):
+            return ["1", "2", "3"]
+
+        def exists(self, iid):
+            return True
+
+        def selection(self):
+            return ("1", "3")  # selección múltiple
+
+        def item(self, iid, tags=None):
+            tagged[iid] = tags[0]
+
+    class _View:
+        _tree = _Tree()
+        _row_tag_for_index = MovementsView._row_tag_for_index
+
+    MovementsView._on_tree_select(_View())
+    assert tagged["1"] == "sel"
+    assert tagged["3"] == "sel"
+    assert tagged["2"] != "sel"

@@ -638,7 +638,7 @@ class MovementsView(ctk.CTkFrame):
 
         self._tree = ttk.Treeview(
             body, columns=self.COLS, show="tree", style=self.MOV_STYLE,
-            selectmode="browse",
+            selectmode="extended",
         )
         # Columna #0: barrita lateral de color por tipo (franja fina)
         self._tree.column("#0", width=self.STRIP_W, minwidth=self.STRIP_W,
@@ -1001,14 +1001,13 @@ class MovementsView(ctk.CTkFrame):
         return "row_even" if idx % 2 == 0 else "row_odd"
 
     def _on_tree_select(self, _event=None):
-        """Realza la fila seleccionada sin perder el patrón zebra."""
+        """Realza TODAS las filas seleccionadas sin perder el patrón zebra."""
         try:
+            sel = set(self._tree.selection())
             for idx, iid in enumerate(self._tree.get_children()):
                 if self._tree.exists(iid):
-                    self._tree.item(iid, tags=(self._row_tag_for_index(idx),))
-            sel = self._tree.selection()
-            if sel and self._tree.exists(sel[0]):
-                self._tree.item(sel[0], tags=("sel",))
+                    tag = "sel" if iid in sel else self._row_tag_for_index(idx)
+                    self._tree.item(iid, tags=(tag,))
         except Exception:
             pass
 
