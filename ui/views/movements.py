@@ -686,6 +686,8 @@ class MovementsView(ctk.CTkFrame):
 
         # Interacciones de la tabla
         self._tree.bind("<Double-1>", self._on_double_click)
+        self._tree.bind("<Button-1>", self._on_single_click)
+        self._tree.bind("<Motion>", self._on_motion)
         self._tree.bind("<Button-3>", self._on_right_click)
         self._tree.bind("<Delete>", self._on_delete_key)
         self._tree.bind("<<TreeviewSelect>>", self._on_tree_select)
@@ -983,7 +985,7 @@ class MovementsView(ctk.CTkFrame):
                     r.get("cant_display") or str(r["quantity"] or ""),
                     r["product"] or "—",
                     r["registered_by"] or "",
-                    "✎  ✕",
+                    "✏️  🗑️",
                     "",  # pad_r (margen derecho)
                 ),
             )
@@ -1070,7 +1072,44 @@ class MovementsView(ctk.CTkFrame):
         iid = self._tree.identify_row(event.y)
         return iid
 
+    def _acc_column(self, event):
+        """True si el puntero está sobre la columna de acciones."""
+        col = self._tree.identify_column(event.x)
+        if not col:
+            return False
+        try:
+            idx = int(col.replace("#", "")) - 1
+        except ValueError:
+            return False
+        return 0 <= idx < len(self.COLS) and self.COLS[idx] == "acc"
+
+    def _on_single_click(self, event):
+        iid = self._tree.identify_row(event.y)
+        if not iid:
+            return
+        if not self._acc_column(event):
+            return  # el clic no fue en la columna de acciones
+        box = self._tree.bbox(iid, "acc")
+        if not box:
+            return
+        x, _y, w, _h = box
+        mid = int(iid)
+        if event.x < x + w / 2:
+            self._edit_movement(mid)
+        else:
+            self._delete_movement(mid)
+        return "break"  # no dejar que siga como selección normal de fila
+
+    def _on_motion(self, event):
+        """Cursor de mano sobre ✏️/🗑️: señal de que son clickeables."""
+        if self._tree.identify_row(event.y) and self._acc_column(event):
+            self._tree.configure(cursor="hand2")
+        else:
+            self._tree.configure(cursor="")
+
     def _on_double_click(self, event):
+        if self._acc_column(event):
+            return  # el clic de acciones ya se resolvió en <Button-1>
         iid = self._tree.identify_row(event.y)
         if iid:
             self._open_info(int(iid))
@@ -2450,15 +2489,37 @@ class _MovementEditDialog(BaseDialog):
         self.on_save = on_save
         self._employees = get_all_employees()
 
-        header = ctk.CTkFrame(self, fg_color=AZUL_NOCHE, height=60)
+        mtype = movement.get("type")
+        tlabel, _tdesc, _teffect, _tbg, tfg = _MovementInfoDialog.TYPE_META.get(
+            mtype, (mtype or "—", "", "", DSG_SURF, AZUL_NOCHE)
+        )
+        fecha, hora = _split_ts(movement.get("timestamp"))
+
+        # Header teñido por el tipo original del movimiento (igual que el
+        # diálogo de detalle): dice "qué es esto" antes de tocar nada.
+        header = ctk.CTkFrame(self, fg_color=tfg, height=60)
         header.pack(fill="x")
         header.pack_propagate(False)
+
+        pill = ctk.CTkFrame(header, fg_color=DSG_SURF, corner_radius=6)
+        pill.pack(side="left", padx=(16, 8))
         ctk.CTkLabel(
-            header,
-            text="✎ EDITAR MOVIMIENTO",
-            font=ctk.CTkFont(size=20, weight="bold"),
-            text_color="white",
-        ).pack(pady=15)
+            pill, text="●", font=ctk.CTkFont(size=10), text_color=tfg
+        ).pack(side="left", padx=(8, 4), pady=4)
+        ctk.CTkLabel(
+            pill, text=tlabel, font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=tfg,
+        ).pack(side="left", padx=(0, 10), pady=4)
+
+        ctk.CTkLabel(
+            header, text="✎ Editar movimiento",
+            font=ctk.CTkFont(size=14, weight="bold"), text_color="white",
+        ).pack(side="left")
+
+        ctk.CTkLabel(
+            header, text=f"#{movement.get('id')} · {fecha} {hora}",
+            font=ctk.CTkFont(size=12), text_color=DSG_SURF_SUB,
+        ).pack(side="right", padx=16)
 
         btns = ctk.CTkFrame(self, fg_color=BLANCO_CALIDO)
         btns.pack(side="bottom", fill="x", padx=16, pady=(0, 12))
@@ -2486,16 +2547,33 @@ class _MovementEditDialog(BaseDialog):
             ).pack(fill="x", padx=14, pady=(10, 2))
 
         _lbl("Producto")
-        info = ctk.CTkFrame(body, fg_color=FONDO_SUBHEADER, corner_radius=6)
+        info = ctk.CTkFrame(
+            body, fg_color=FONDO_SUBHEADER, corner_radius=6,
+            border_width=1, border_color=tfg,
+        )
         info.pack(fill="x", padx=14)
+        contexto = ctk.CTkFrame(info, fg_color="transparent")
+        contexto.pack(side="left", fill="x", expand=True, padx=12, pady=8)
         ctk.CTkLabel(
-            info,
+            contexto,
             text=str(movement["product"]),
-            font=ctk.CTkFont(size=13),
-            text_color=GRIS_AZULADO,
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color=AZUL_NOCHE,
+            anchor="w",
             justify="left",
             wraplength=430,
-        ).pack(side="left", padx=12, pady=8)
+        ).pack(fill="x")
+        n_items = len(movement.get("items") or [])
+        ctk.CTkLabel(
+            contexto,
+            text=(
+                f"#{movement.get('id')} · {fecha} {hora} · "
+                f"{n_items} producto(s)"
+            ),
+            font=ctk.CTkFont(size=11),
+            text_color=GRIS_AZULADO,
+            anchor="w",
+        ).pack(fill="x", pady=(2, 0))
 
         _lbl("Tipo")
         editable_types = ["entrada", "salida", "devolucion"]
