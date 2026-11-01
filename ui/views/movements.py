@@ -1387,12 +1387,14 @@ class _MovementInfoDialog(BaseDialog):
         try:
             detail = get_movement_detail(movement_id)
         except Exception as e:
-            MessageDialog(self, "Error",
+            # El aviso cuelga del padre persistente: este diálogo se destruye
+            # enseguida y, si fuera su padre, Tk se llevaría la notificación.
+            MessageDialog(parent, "Error",
                           f"No se pudo cargar el movimiento:\n{e}", is_error=True)
             self.destroy()
             return
         if not detail:
-            MessageDialog(self, "Error", "No se encontró el movimiento.",
+            MessageDialog(parent, "Error", "No se encontró el movimiento.",
                           is_error=True)
             self.destroy()
             return

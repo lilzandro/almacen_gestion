@@ -310,8 +310,6 @@ class ConfirmDialog(BaseDialog):
 
         btn_frame = ctk.CTkFrame(self, fg_color=BLANCO_CALIDO)
         btn_frame.pack(pady=20)
-        btn_frame.pack_propagate(False)
-        btn_frame.configure(width=360)
 
         btn_color = NARANJA_INTENSO if is_danger else AZUL_CERULEO
 
