@@ -323,3 +323,94 @@ def test_reporte_por_periodo_pasa_el_tipo_filtrado(monkeypatch):
     finally:
         dlg.destroy()
         root.destroy()
+
+
+@pytest.mark.skipif(
+    not os.environ.get("DISPLAY"), reason="requiere un servidor X (Tkinter)"
+)
+def test_reporte_de_seleccion_sin_filas_seleccionadas_avisa_y_no_genera(monkeypatch):
+    import ui.views.movements as mv
+
+    class _Tree:
+        def selection(self):
+            return ()
+
+    class _View:
+        _tree = _Tree()
+        current_user = {"username": "admin"}
+
+        def _warehouse_id(self):
+            return None
+
+        def _warehouse_name(self):
+            return ""
+
+    root = tk.Tk()
+    root.withdraw()
+    avisos = []
+    monkeypatch.setattr(
+        "ui.views.movements.MessageDialog",
+        lambda *a, **k: avisos.append(a),
+    )
+    # Evita que se abra un diálogo de archivo real si el flujo no corta antes.
+    monkeypatch.setattr(mv.filedialog, "asksaveasfilename", lambda **k: "")
+    try:
+        dlg = mv._ReportsDialog(root, _View())
+        dlg._kind.set("Selección actual")
+        dlg._on_type_changed("Selección actual")
+        dlg._generate()
+        assert avisos
+    finally:
+        dlg.destroy()
+        root.destroy()
+
+
+@pytest.mark.skipif(
+    not os.environ.get("DISPLAY"), reason="requiere un servidor X (Tkinter)"
+)
+def test_reporte_de_seleccion_genera_pdf_con_los_ids(monkeypatch):
+    import ui.views.movements as mv
+
+    captured = {}
+
+    class _Tree:
+        def selection(self):
+            return ("25", "24")
+
+    class _View:
+        _tree = _Tree()
+        current_user = {"username": "admin"}
+
+        def _warehouse_id(self):
+            return None
+
+        def _warehouse_name(self):
+            return "Principal"
+
+    root = tk.Tk()
+    root.withdraw()
+    monkeypatch.setattr(
+        mv, "get_movements_flat",
+        lambda **kw: captured.update(consulta=kw) or [],
+    )
+    monkeypatch.setattr(
+        mv, "export_movements",
+        lambda *a, **k: captured.update(export=k),
+    )
+    monkeypatch.setattr(
+        mv.filedialog, "asksaveasfilename", lambda **k: "/tmp/sel.pdf"
+    )
+    monkeypatch.setattr(mv, "MessageDialog", lambda *a, **k: None)
+    try:
+        dlg = mv._ReportsDialog(root, _View())
+        dlg._kind.set("Selección actual")
+        dlg._on_type_changed("Selección actual")
+        assert dlg._dates_frame.winfo_manager() == ""
+        assert dlg._tipo_frame.winfo_manager() == ""
+        assert "2 movimiento(s)" in dlg._status.cget("text")
+        dlg._generate()
+        assert captured["consulta"]["ids"] == [25, 24]
+        assert "Selección manual: 2" in captured["export"]["filters_text"]
+    finally:
+        dlg.destroy()
+        root.destroy()

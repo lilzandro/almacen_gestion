@@ -39,7 +39,7 @@ from core.export import (
 
 REPORT_TYPES = [
     "Diario", "Semanal", "Mensual", "Crítico de cierre",
-    "Por producto (ranking)",
+    "Por producto (ranking)", "Selección actual",
 ]
 
 
@@ -305,6 +305,12 @@ class _ReportsDialog(BaseDialog):
 
     def _on_type_changed(self, kind):
         self._kind.set(kind)
+        if kind == "Selección actual":
+            self._tipo_frame.pack_forget()
+            self._dates_frame.pack_forget()
+            n = len(self._view._tree.selection())
+            self._status.configure(text=f"{n} movimiento(s) seleccionado(s).")
+            return
         self._apply_dates(kind)
         # Tipo y fechas van antes de "Envío (opcional)"; el pack tardío de
         # _dates_frame los mandaba al final del diálogo.
@@ -328,6 +334,37 @@ class _ReportsDialog(BaseDialog):
 
     def _generate(self):
         kind = self._kind.get()
+        if kind == "Selección actual":
+            ids = [int(i) for i in self._view._tree.selection()]
+            if not ids:
+                MessageDialog(
+                    self, "Aviso",
+                    "Seleccioná al menos un movimiento de la lista "
+                    "(Ctrl+clic para elegir varios).", is_warning=True,
+                )
+                return
+            path = filedialog.asksaveasfilename(
+                defaultextension=".pdf", filetypes=[("PDF", "*.pdf")],
+                initialfile=f"reporte_seleccion_{len(ids)}.pdf",
+            )
+            if not path:
+                return
+            rows = get_movements_flat(ids=ids)
+            try:
+                export_movements(
+                    path, movements=rows,
+                    warehouse_name=self._view._warehouse_name(),
+                    filters_text=f"Selección manual: {len(ids)} movimiento(s)",
+                    generated_by=self._view.current_user.get("username", ""),
+                )
+            except Exception as e:
+                MessageDialog(self, "Error", f"No se pudo generar el PDF:\n{e}")
+                return
+            MessageDialog(
+                self._view, "Éxito", f"Reporte PDF generado en:\n{path}"
+            )
+            self.destroy()
+            return
         try:
             d1, d2 = self._parse_dates()
         except ValueError as e:
