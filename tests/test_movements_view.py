@@ -146,6 +146,52 @@ def test_edit_dialog_tine_el_header_segun_el_tipo(monkeypatch):
         root.destroy()
 
 
+@pytest.mark.skipif(
+    not os.environ.get("DISPLAY"), reason="requiere un servidor X (Tkinter)"
+)
+def test_detalle_de_eliminacion_de_grupo_muestra_cada_producto(monkeypatch):
+    import ui.views.movements as movements_mod
+
+    detail = {
+        "id": 42,
+        "type": "eliminacion_grupo",
+        "timestamp": "2026-11-01 10:00:00",
+        "quantity": 2,
+        "notes": "Grupo eliminado: AP (TP-Link). 2 eliminados",
+        "product": "",
+        "brand": "",
+        "unit": "",
+        "employee": "-",
+        "cargo": "",
+        "registered_by": "admin",
+        "warehouse": "",
+        "items": [
+            {"name": "AP", "brand": "TP-Link", "qty": 1, "unit": "und",
+             "seriales": "AP-1"},
+            {"name": "AP", "brand": "TP-Link", "qty": 1, "unit": "und",
+             "seriales": "AP-2"},
+        ],
+    }
+    monkeypatch.setattr(movements_mod, "get_movement_detail", lambda mid: detail)
+
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        dlg = movements_mod._MovementInfoDialog(root, movement_id=42)
+        texts = []
+        stack = [dlg]
+        while stack:
+            w = stack.pop()
+            if hasattr(w, "cget") and "text" in w.keys():
+                texts.append(str(w.cget("text")))
+            stack.extend(w.winfo_children())
+        assert sum("AP-1" in t for t in texts) == 1
+        assert sum("AP-2" in t for t in texts) == 1
+    finally:
+        dlg.destroy()
+        root.destroy()
+
+
 def test_sync_row_buttons_reintenta_si_la_columna_acc_no_tiene_su_ancho_real():
     """Si 'acc' todavía está en su ancho inicial (no el real, de COL_MINS),
     _sync_row_buttons no debe posicionar botones con esa geometría
