@@ -144,3 +144,35 @@ def test_edit_dialog_tine_el_header_segun_el_tipo(monkeypatch):
     finally:
         dlg.destroy()
         root.destroy()
+
+
+def test_sync_row_buttons_reintenta_si_la_columna_acc_no_tiene_su_ancho_real():
+    """Si 'acc' todavía está en su ancho inicial (no el real, de COL_MINS),
+    _sync_row_buttons no debe posicionar botones con esa geometría
+    obsoleta — debe reprogramarse con self.after(60, ...)."""
+    from ui.views.movements import MovementsView
+
+    calls = []
+
+    class _Tree:
+        def column(self, col, option=None):
+            assert col == "acc"
+            return 60  # ancho inicial genérico, no el real (150)
+
+        def get_children(self):
+            raise AssertionError(
+                "no debería llegar a iterar filas con el ancho sin aplicar"
+            )
+
+    class _View:
+        COLS = MovementsView.COLS
+        COL_MINS = MovementsView.COL_MINS
+        _widgets_built = True
+        _tree = _Tree()
+        _row_buttons = {}
+
+        def after(self, ms, fn):
+            calls.append(ms)
+
+    MovementsView._sync_row_buttons(_View())
+    assert calls == [60]

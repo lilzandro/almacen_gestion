@@ -1107,9 +1107,14 @@ class MovementsView(ctk.CTkFrame):
         )
         return edit, delete
 
-    def _sync_row_buttons(self):
+    def _sync_row_buttons(self, attempts=0):
         """Coloca los botones sobre la celda 'acc' de cada fila visible."""
         if not self._widgets_built:
+            return
+        min_w = self.COL_MINS[self.COLS.index("acc")]
+        if self._tree.column("acc", "width") < min_w:
+            if attempts < 20:
+                self.after(60, lambda: self._sync_row_buttons(attempts + 1))
             return
         visibles = set()
         for iid in self._tree.get_children():
