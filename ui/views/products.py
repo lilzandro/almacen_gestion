@@ -1501,6 +1501,58 @@ class _GroupEditDialog(BaseDialog):
             text_color="white",
         ).pack(side="left", padx=20, pady=14)
 
+        btns = ctk.CTkFrame(self, fg_color=BLANCO_CALIDO)
+        btns.pack(side="bottom", fill="x", padx=16, pady=(0, 12))
+
+        if self.on_add_more:
+            ctk.CTkButton(
+                btns,
+                text="⊕  Agregar Productos a este Modelo",
+                height=38,
+                corner_radius=8,
+                font=ctk.CTkFont(size=13, weight="bold"),
+                fg_color=AZUL_CERULEO,
+                hover_color=HOVER_CERULEO,
+                text_color="white",
+                command=self._open_add_more,
+            ).pack(fill="x", pady=(0, 6))
+
+        row2 = ctk.CTkFrame(btns, fg_color="transparent")
+        row2.pack(fill="x", pady=(0, 6))
+        ctk.CTkButton(
+            row2,
+            text="✓ GUARDAR",
+            height=38,
+            font=ctk.CTkFont(size=13, weight="bold"),
+            fg_color=AZUL_MARINO,
+            hover_color=AZUL_NOCHE,
+            text_color="white",
+            command=self._save,
+        ).pack(side="left", fill="x", expand=True, padx=(0, 6))
+        ctk.CTkButton(
+            row2,
+            text="✕ CANCELAR",
+            height=38,
+            font=ctk.CTkFont(size=13, weight="bold"),
+            fg_color=NARANJA_INTENSO,
+            hover_color=HOVER_NARANJA_INT,
+            text_color="white",
+            command=self.destroy,
+        ).pack(side="left", fill="x", expand=True)
+
+        if self.on_delete:
+            ctk.CTkButton(
+                btns,
+                text="🗑  ELIMINAR GRUPO COMPLETO",
+                height=36,
+                corner_radius=8,
+                font=ctk.CTkFont(size=12, weight="bold"),
+                fg_color=NARANJA_INTENSO,
+                hover_color=HOVER_NARANJA_INT,
+                text_color="white",
+                command=self._delete_group,
+            ).pack(fill="x")
+
         body = ctk.CTkFrame(self, fg_color="white", corner_radius=8)
         body.pack(fill="both", expand=True, padx=16, pady=12)
 
@@ -1561,58 +1613,6 @@ class _GroupEditDialog(BaseDialog):
         )
         self._sup_opt.set(current_sup)
         self._sup_opt.pack(fill="x", padx=14, pady=(0, 8))
-
-        btns = ctk.CTkFrame(self, fg_color=BLANCO_CALIDO)
-        btns.pack(fill="x", padx=16, pady=(0, 12))
-
-        if self.on_add_more:
-            ctk.CTkButton(
-                btns,
-                text="⊕  Agregar Productos a este Modelo",
-                height=38,
-                corner_radius=8,
-                font=ctk.CTkFont(size=13, weight="bold"),
-                fg_color=AZUL_CERULEO,
-                hover_color=HOVER_CERULEO,
-                text_color="white",
-                command=self._open_add_more,
-            ).pack(fill="x", pady=(0, 6))
-
-        row2 = ctk.CTkFrame(btns, fg_color="transparent")
-        row2.pack(fill="x", pady=(0, 6))
-        ctk.CTkButton(
-            row2,
-            text="✓ GUARDAR",
-            height=38,
-            font=ctk.CTkFont(size=13, weight="bold"),
-            fg_color=AZUL_MARINO,
-            hover_color=AZUL_NOCHE,
-            text_color="white",
-            command=self._save,
-        ).pack(side="left", fill="x", expand=True, padx=(0, 6))
-        ctk.CTkButton(
-            row2,
-            text="✕ CANCELAR",
-            height=38,
-            font=ctk.CTkFont(size=13, weight="bold"),
-            fg_color=NARANJA_INTENSO,
-            hover_color=HOVER_NARANJA_INT,
-            text_color="white",
-            command=self.destroy,
-        ).pack(side="left", fill="x", expand=True)
-
-        if self.on_delete:
-            ctk.CTkButton(
-                btns,
-                text="🗑  ELIMINAR GRUPO COMPLETO",
-                height=36,
-                corner_radius=8,
-                font=ctk.CTkFont(size=12, weight="bold"),
-                fg_color=NARANJA_INTENSO,
-                hover_color=HOVER_NARANJA_INT,
-                text_color="white",
-                command=self._delete_group,
-            ).pack(fill="x")
 
         show_centered(self)
         self.protocol("WM_DELETE_WINDOW", self._safe_close)
@@ -3144,7 +3144,7 @@ class _ProductDialog(BaseDialog):
             f"{s['name']} (ID:{s['id']})" for s in suppliers
         ]
 
-        self.geometry("500x550")
+        self.geometry("600x620")
         self.minsize(420, 480)
 
         self.protocol("WM_DELETE_WINDOW", self._safe_close)
@@ -3196,6 +3196,29 @@ class _ProductDialog(BaseDialog):
                 font=ctk.CTkFont(size=12),
                 text_color=GRIS_AZULADO,
             ).pack(side="left")
+
+        btns = ctk.CTkFrame(main, fg_color=BLANCO_CALIDO)
+        btns.pack(side="bottom", fill="x", padx=20, pady=15)
+        ctk.CTkButton(
+            btns,
+            text="✓ GUARDAR",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            command=self._save_edit,
+            fg_color=AZUL_MARINO,
+            hover_color=AZUL_NOCHE,
+            text_color="white",
+            height=45,
+        ).pack(side="left", expand=True, padx=5)
+        ctk.CTkButton(
+            btns,
+            text="✕ CANCELAR",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            fg_color=NARANJA_INTENSO,
+            hover_color=HOVER_NARANJA_SEL,
+            text_color="white",
+            height=45,
+            command=self.destroy,
+        ).pack(side="left", expand=True, padx=5)
 
         body = ctk.CTkFrame(main, fg_color="white", corner_radius=10)
         body.pack(fill="both", expand=True, padx=20)
@@ -3277,29 +3300,6 @@ class _ProductDialog(BaseDialog):
         )
         self.status_opt.set(d.get("status", "disponible"))
         self.status_opt.pack(fill="x", padx=15)
-
-        btns = ctk.CTkFrame(main, fg_color=BLANCO_CALIDO)
-        btns.pack(fill="x", padx=20, pady=15)
-        ctk.CTkButton(
-            btns,
-            text="✓ GUARDAR",
-            font=ctk.CTkFont(size=14, weight="bold"),
-            command=self._save_edit,
-            fg_color=AZUL_MARINO,
-            hover_color=AZUL_NOCHE,
-            text_color="white",
-            height=45,
-        ).pack(side="left", expand=True, padx=5)
-        ctk.CTkButton(
-            btns,
-            text="✕ CANCELAR",
-            font=ctk.CTkFont(size=14, weight="bold"),
-            fg_color=NARANJA_INTENSO,
-            hover_color=HOVER_NARANJA_SEL,
-            text_color="white",
-            height=45,
-            command=self.destroy,
-        ).pack(side="left", expand=True, padx=5)
 
     def _save_edit(self):
         import re
