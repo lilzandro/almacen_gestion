@@ -78,6 +78,32 @@ def test_click_sin_fila_no_dispara_nada():
 @pytest.mark.skipif(
     not os.environ.get("DISPLAY"), reason="requiere un servidor X (Tkinter)"
 )
+def test_acciones_de_fila_son_botones_reales_con_texto():
+    import customtkinter as ctk
+
+    from ui.views.movements import MovementsView
+
+    root = tk.Tk()
+    root.withdraw()
+
+    class _View:
+        _body = root
+
+    _View._make_row_buttons = MovementsView._make_row_buttons
+    view = _View()
+    botones = MovementsView._make_row_buttons(view, "7")
+    try:
+        assert all(isinstance(b, ctk.CTkButton) for b in botones)
+        assert [b.cget("text") for b in botones] == ["Editar", "Eliminar"]
+    finally:
+        for b in botones:
+            b.destroy()
+        root.destroy()
+
+
+@pytest.mark.skipif(
+    not os.environ.get("DISPLAY"), reason="requiere un servidor X (Tkinter)"
+)
 def test_edit_dialog_tine_el_header_segun_el_tipo(monkeypatch):
     import ui.views.movements as mv
 

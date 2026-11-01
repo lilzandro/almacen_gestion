@@ -870,7 +870,8 @@ def delete_product(product_id, user_id=None, notes="", warehouse_id=None):
 
         prod = conn.execute(
             """SELECT id, name, COALESCE(brand,'') AS brand,
-                      COALESCE(serial,'') AS serial, COALESCE(unit,'und') AS unit
+                      COALESCE(serial,'') AS serial, COALESCE(unit,'und') AS unit,
+                      COALESCE(quantity,0) AS quantity
                FROM products WHERE id=?""",
             (product_id,),
         ).fetchone()
@@ -881,11 +882,27 @@ def delete_product(product_id, user_id=None, notes="", warehouse_id=None):
         _backfill_movement_snapshots(conn, [prod])
 
         if user_id:
-            conn.execute(
+            cur = conn.execute(
                 """INSERT INTO movements
                    (type, product_id, employee_id, user_id, quantity, notes, warehouse_id)
                    VALUES ('eliminacion', 0, NULL, ?, 1, ?, ?)""",
                 (user_id, notes or f"Producto eliminado: {prod_name}", warehouse_id),
+            )
+            # Snapshot del producto en el propio movimiento de eliminación:
+            # sin esto, su detalle quedaba sin "Producto" al borrarse la fila.
+            qty = prod["quantity"] if prod["quantity"] > 0 else 1
+            conn.execute(
+                """INSERT INTO movement_items
+                   (movement_id, product_id, name, brand, qty, unit, seriales)
+                   VALUES (?, 0, ?, ?, ?, ?, ?)""",
+                (
+                    cur.lastrowid,
+                    prod["name"],
+                    prod["brand"],
+                    qty,
+                    prod["unit"],
+                    prod["serial"] or "",
+                ),
             )
 
         cursor.execute("DELETE FROM products WHERE id=?", (product_id,))
@@ -913,7 +930,8 @@ def delete_product_group(name, brand, user_id=None, notes="", warehouse_id=None)
     try:
         rows = conn.execute(
             """SELECT p.id, p.name, COALESCE(p.brand,'') AS brand,
-                      COALESCE(p.serial,'') AS serial, COALESCE(p.unit,'und') AS unit
+                      COALESCE(p.serial,'') AS serial, COALESCE(p.unit,'und') AS unit,
+                      COALESCE(p.quantity,0) AS quantity
                FROM products p
                WHERE p.name = ? AND COALESCE(p.brand,'') = ? AND p.status != 'inactivo'""",
             (name, brand or ""),
@@ -923,7 +941,7 @@ def delete_product_group(name, brand, user_id=None, notes="", warehouse_id=None)
             _backfill_movement_snapshots(conn, rows)
             conn.executemany("DELETE FROM products WHERE id=?", [(i,) for i in ids])
         if user_id:
-            conn.execute(
+            cur = conn.execute(
                 """INSERT INTO movements
                    (type, product_id, employee_id, user_id, quantity, notes, warehouse_id)
                    VALUES ('eliminacion_grupo', 0, NULL, ?, ?, ?, ?)""",
@@ -931,6 +949,23 @@ def delete_product_group(name, brand, user_id=None, notes="", warehouse_id=None)
                  notes or f"Grupo eliminado: {name} ({brand}). {len(ids)} eliminados",
                  warehouse_id),
             )
+            # Un snapshot por unidad eliminada, para que el detalle diga
+            # exactamente qué productos/seriales se borraron.
+            for r in rows:
+                qty = r["quantity"] if r["quantity"] > 0 else 1
+                conn.execute(
+                    """INSERT INTO movement_items
+                       (movement_id, product_id, name, brand, qty, unit, seriales)
+                       VALUES (?, 0, ?, ?, ?, ?, ?)""",
+                    (
+                        cur.lastrowid,
+                        r["name"],
+                        r["brand"],
+                        qty,
+                        r["unit"],
+                        r["serial"] or "",
+                    ),
+                )
         conn.commit()
         _invalidate_prefix("units_by_model")
         _invalidate_prefix("products_grouped")
@@ -1254,7 +1289,11 @@ def get_movement_detail(movement_id):
         row = conn.execute(
             """
             SELECT m.id, m.type, m.timestamp, m.quantity, m.notes,
-                   COALESCE(p.name, '') AS product,
+                   COALESCE(NULLIF(p.name, ''),
+                            (SELECT mi.name FROM movement_items mi
+                              WHERE mi.movement_id = m.id ORDER BY mi.id LIMIT 1),
+                            CASE WHEN m.type IN ('eliminacion', 'eliminacion_grupo')
+                                 THEN m.notes ELSE '' END) AS product,
                    COALESCE(p.brand, '') AS brand,
                    COALESCE(p.unit, '') AS unit,
                    COALESCE(e.name, '-') AS employee,

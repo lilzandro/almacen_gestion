@@ -200,6 +200,75 @@ def test_editar_compuesto_sin_stock_hace_rollback_total(db, q):
     } == {"Router": 2, "Cable": 5}
 
 
+def test_delete_product_registra_el_producto_en_el_movimiento(db, q):
+    repo = db["repo"]
+    pid = repo.create_product(
+        "Camara", "BC-CAM", "Hik", "CAM-1", "", 0, None, "und",
+        warehouse_id=db["wh_id"],
+    )
+    repo.delete_product(
+        pid, user_id=db["user_id"], warehouse_id=db["wh_id"]
+    )
+
+    mid = q(
+        "SELECT id FROM movements WHERE type='eliminacion' "
+        "ORDER BY id DESC LIMIT 1"
+    )[0]["id"]
+    detail = repo.get_movement_detail(mid)
+
+    assert detail["product"] == "Camara"
+    assert len(detail["items"]) == 1
+    assert detail["items"][0]["name"] == "Camara"
+    assert detail["items"][0]["seriales"] == "CAM-1"
+
+
+def test_delete_group_registra_los_productos_eliminados(db, q):
+    repo = db["repo"]
+    for i in (1, 2):
+        repo.create_product(
+            "AP", f"BC-AP-{i}", "TP-Link", f"AP-{i}", "", 0, None, "und",
+            warehouse_id=db["wh_id"],
+        )
+
+    eliminados, _ = repo.delete_product_group(
+        "AP", "TP-Link", user_id=db["user_id"], warehouse_id=db["wh_id"]
+    )
+    assert eliminados == 2
+
+    mid = q(
+        "SELECT id FROM movements WHERE type='eliminacion_grupo' "
+        "ORDER BY id DESC LIMIT 1"
+    )[0]["id"]
+    detail = repo.get_movement_detail(mid)
+
+    assert len(detail["items"]) == 2
+    assert {i["name"] for i in detail["items"]} == {"AP"}
+    assert {i["seriales"] for i in detail["items"]} == {"AP-1", "AP-2"}
+
+
+def test_eliminacion_heredada_sin_items_muestra_la_nota(db, q):
+    repo = db["repo"]
+    conn = repo.get_connection()
+    try:
+        cur = conn.execute(
+            "INSERT INTO movements "
+            "(type, product_id, employee_id, user_id, quantity, notes, warehouse_id) "
+            "VALUES ('eliminacion', 0, NULL, ?, 1, ?, ?)",
+            (
+                db["user_id"],
+                "Producto eliminado: Router viejo (Marca)",
+                db["wh_id"],
+            ),
+        )
+        mid = cur.lastrowid
+        conn.commit()
+    finally:
+        conn.close()
+
+    detail = repo.get_movement_detail(mid)
+    assert "Router viejo" in (detail["product"] or "")
+
+
 def test_bulk_create_products_genera_un_solo_movimiento(db, q):
     repo = db["repo"]
     items = [
