@@ -147,6 +147,7 @@ class UsersView(ctk.CTkFrame):
 
 class _UserDialog(BaseDialog):
     ROLES = ["admin", "supervisor"]
+    MIN_LEN = 8  # mismo mínimo que el cambio de contraseña (ui/login_frame.py)
 
     def __init__(self, parent, title, on_save, initial=None, edit_mode=False):
         super().__init__(parent)
