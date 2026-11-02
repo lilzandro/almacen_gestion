@@ -41,9 +41,6 @@ Thumbs.db
 .agents/
 skills-lock.json
 
-# Script local con credenciales reales (correo/WhatsApp de la persona)
-run.sh
-
 # Artefactos generados al probar (PDFs de reportes, backups de BD)
 *.pdf
 inventory.db.bak-*
