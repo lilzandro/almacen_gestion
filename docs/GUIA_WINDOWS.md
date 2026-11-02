@@ -171,7 +171,45 @@ proyecto.
 
 ---
 
-## 9. Notas importantes
+## 9. Envío de reportes por correo y WhatsApp (opcional)
+
+En **Movimientos → Reportes**, hay 2 casillas opcionales: "Abrir correo" y
+"Abrir WhatsApp". Al generar un reporte, abren el cliente de correo o
+WhatsApp Web con el mensaje listo — el PDF se adjunta a mano, no se envía
+automáticamente (ninguno de los dos protocolos permite adjuntar un archivo
+por enlace).
+
+Para habilitar esas 2 casillas, hay que definir 2 variables de entorno
+**antes** de abrir el sistema: `REPORT_EMAIL_TO` (el correo que va a recibir
+los reportes) y `WHATSAPP_TO` (el número, formato internacional sin `+`, ej.
+`584121234567` para Venezuela). Si no se definen, las casillas aparecen
+deshabilitadas (en gris) y el resto del sistema funciona igual.
+
+**Forma más simple: crear `run.bat`** en la carpeta del proyecto (clic
+derecho → Nuevo → Documento de texto, escribir el contenido de abajo,
+guardar como `run.bat`, no como `.txt`):
+```bat
+@echo off
+set REPORT_EMAIL_TO=tu_correo_destino@ejemplo.com
+set WHATSAPP_TO=584121234567
+python main.py
+```
+Reemplazá los 2 valores por los reales. A partir de ahí, abrí el sistema
+siempre con doble clic en `run.bat`, en vez de `python main.py` directo.
+
+**Alternativa en PowerShell**, sin crear un archivo, en la misma sesión que
+después abre `python main.py`:
+```powershell
+$env:REPORT_EMAIL_TO = "tu_correo_destino@ejemplo.com"
+$env:WHATSAPP_TO = "584121234567"
+python main.py
+```
+Esto solo dura mientras esa ventana de PowerShell esté abierta — para que
+quede siempre disponible, usá `run.bat` en su lugar.
+
+---
+
+## 10. Notas importantes
 
 - Cambiá la contraseña inicial `admin123` en el primer ingreso.
 - Hacé respaldos periódicos de `inventory.db` (sección 7).

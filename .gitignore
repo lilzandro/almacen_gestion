@@ -41,8 +41,11 @@ Thumbs.db
 .agents/
 skills-lock.json
 
-# Artefactos generados al probar (PDFs de reportes, backups de BD)
-*.pdf
+# Artefactos generados al probar (reportes/comprobantes exportados en la raiz)
+/*.pdf
+/movimiento_*.pdf
+/comprobante_*.pdf
+/reporte_*.pdf
 inventory.db.bak-*
 
 # Certificados TLS generados en runtime
