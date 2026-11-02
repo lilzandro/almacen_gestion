@@ -125,7 +125,9 @@ class App(ctk.CTk):
         self.current_warehouse_id = wh["id"]
         # Invalidar caché de vistas que dependen del almacén
         for key in ("products", "movements", "dashboard"):
-            self._views.pop(key, None)
+            old = self._views.pop(key, None)
+            if old is not None:
+                old.destroy()
         if self._current_view_name:
             self._navigate(self._current_view_name)
 

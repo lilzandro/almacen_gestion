@@ -586,3 +586,29 @@ def test_checkbox_whatsapp_gateado_por_variables_de_entorno(monkeypatch):
         dlg.destroy()
     finally:
         root.destroy()
+
+
+@pytest.mark.skipif(
+    not os.environ.get("DISPLAY"), reason="requiere un servidor X (Tkinter)"
+)
+def test_rows_inicializado_evita_attributeerror_en_flush_resize(monkeypatch):
+    from ui.views.movements import MovementsView
+    import ui.views.movements as movements_mod
+
+    monkeypatch.setattr(
+        movements_mod, "query_movements_view",
+        lambda **k: (_ for _ in ()).throw(RuntimeError("db locked")),
+    )
+    monkeypatch.setattr(movements_mod, "get_all_employees", lambda: [])
+    monkeypatch.setattr(movements_mod, "MessageDialog", lambda *a, **k: None)
+    root = tk.Tk()
+    root.geometry("1200x800+3000+3000")
+    try:
+        view = MovementsView(root, {"id": 1, "role": "admin"}, app=None)
+        view.grid()
+        root.update_idletasks()
+        root.update()
+        # No debe lanzar AttributeError aunque _reload() haya fallado antes:
+        view._flush_resize()
+    finally:
+        root.destroy()

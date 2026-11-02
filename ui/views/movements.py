@@ -551,6 +551,7 @@ class MovementsView(ctk.CTkFrame):
         self._busqueda = ""
         self._pagina = 1
         self._total = 0
+        self._rows = []
         self._counts = {}
         self._last_update = ""
         self._flash_id = None
