@@ -22,10 +22,10 @@ def _size_from_font(spec):
     raise AssertionError(f"sin tamaño numérico en {spec!r}")
 
 
-def test_ui_scale_es_1_3():
+def test_ui_scale_es_1_2():
     from ui.colors import UI_SCALE
 
-    assert UI_SCALE == 1.3
+    assert UI_SCALE == 1.2
 
 
 def test_treeview_escala_alto_y_fuente():

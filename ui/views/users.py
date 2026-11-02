@@ -173,6 +173,29 @@ class _UserDialog(BaseDialog):
             text_color="white",
         ).pack(pady=15)
 
+        btns = ctk.CTkFrame(main, fg_color=BLANCO_CALIDO)
+        btns.pack(side="bottom", fill="x", padx=20, pady=15)
+        ctk.CTkButton(
+            btns,
+            text="✓ GUARDAR",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            command=self._save,
+            fg_color=AZUL_MARINO,
+            hover_color=AZUL_NOCHE,
+            text_color="white",
+            height=45,
+        ).pack(side="left", expand=True, padx=5)
+        ctk.CTkButton(
+            btns,
+            text="✕ CANCELAR",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            fg_color=NARANJA_INTENSO,
+            hover_color=HOVER_NARANJA_SEL,
+            text_color="white",
+            height=45,
+            command=self.destroy,
+        ).pack(side="left", expand=True, padx=5)
+
         content = ctk.CTkFrame(main, fg_color=BLANCO_CALIDO)
         content.pack(fill="both", expand=True, padx=20)
 
@@ -258,29 +281,6 @@ class _UserDialog(BaseDialog):
         if d.get("role"):
             self.role_opt.set(d["role"])
         self.role_opt.pack(fill="x", padx=15)
-
-        btns = ctk.CTkFrame(main, fg_color=BLANCO_CALIDO)
-        btns.pack(fill="x", padx=20, pady=15)
-        ctk.CTkButton(
-            btns,
-            text="✓ GUARDAR",
-            font=ctk.CTkFont(size=14, weight="bold"),
-            command=self._save,
-            fg_color=AZUL_MARINO,
-            hover_color=AZUL_NOCHE,
-            text_color="white",
-            height=45,
-        ).pack(side="left", expand=True, padx=5)
-        ctk.CTkButton(
-            btns,
-            text="✕ CANCELAR",
-            font=ctk.CTkFont(size=14, weight="bold"),
-            fg_color=NARANJA_INTENSO,
-            hover_color=HOVER_NARANJA_SEL,
-            text_color="white",
-            height=45,
-            command=self.destroy,
-        ).pack(side="left", expand=True, padx=5)
         show_centered(self)
 
     def _save(self):

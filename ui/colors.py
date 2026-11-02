@@ -3,7 +3,7 @@
 # === ESCALA GLOBAL DE UI ===
 # Único factor para lo que escala CustomTkinter solo (set_widget_scaling) y
 # para lo que no: ttk.Treeview y tk.Label con tamaños en píxeles literales.
-UI_SCALE = 1.3
+UI_SCALE = 1.2
 
 # === PALETA PRINCIPAL ===
 AZUL_NOCHE = "#031D44"
