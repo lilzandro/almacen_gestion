@@ -24,32 +24,120 @@ CERT_FILE = os.path.join(_CERT_DIR, "cert.pem")
 KEY_FILE = os.path.join(_CERT_DIR, "key.pem")
 
 
+def _cert_sans():
+    """Nombres e IPs que debe cubrir el certificado autofirmado."""
+    names = {"localhost"}
+    ips = {"127.0.0.1"}
+    try:
+        ip = get_lan_ip()
+        if ip:
+            ips.add(ip)
+    except Exception:
+        pass
+    return names, ips
+
+
+def _ensure_cert_openssl() -> bool:
+    """Genera el certificado con el binario `openssl` del sistema."""
+    import shutil as _shutil
+    import subprocess
+
+    openssl = _shutil.which("openssl")
+    if not openssl:
+        return False
+
+    names, ips = _cert_sans()
+    sans = ",".join([f"DNS:{n}" for n in sorted(names)] + [f"IP:{i}" for i in sorted(ips)])
+
+    os.makedirs(_CERT_DIR, exist_ok=True)
+    subprocess.run(
+        [
+            openssl, "req", "-x509", "-newkey", "rsa:2048", "-nodes",
+            "-keyout", KEY_FILE, "-out", CERT_FILE, "-days", "3650",
+            "-subj", "/CN=digicable-inventory",
+            "-addext", f"subjectAltName={sans}",
+        ],
+        check=True,
+        capture_output=True,
+        timeout=30,
+    )
+    return True
+
+
+def _ensure_cert_python() -> bool:
+    """Genera el certificado con la librería `cryptography` (sin openssl externo)."""
+    try:
+        import datetime
+        import ipaddress
+
+        from cryptography import x509
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        from cryptography.x509.oid import NameOID
+    except ImportError:
+        return False
+
+    try:
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        subject = x509.Name(
+            [
+                x509.NameAttribute(NameOID.COMMON_NAME, "digicable-inventory"),
+                x509.NameAttribute(NameOID.ORGANIZATION_NAME, "DigiCable"),
+            ]
+        )
+
+        names, ips = _cert_sans()
+        alt = [x509.DNSName(n) for n in sorted(names)]
+        for ip in sorted(ips):
+            try:
+                alt.append(x509.IPAddress(ipaddress.ip_address(ip)))
+            except ValueError:
+                pass
+
+        now = datetime.datetime.now(datetime.timezone.utc)
+        cert = (
+            x509.CertificateBuilder()
+            .subject_name(subject)
+            .issuer_name(subject)
+            .public_key(key.public_key())
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(now - datetime.timedelta(days=1))
+            .not_valid_after(now + datetime.timedelta(days=3650))
+            .add_extension(x509.SubjectAlternativeName(alt), critical=False)
+            .sign(key, hashes.SHA256())
+        )
+
+        os.makedirs(_CERT_DIR, exist_ok=True)
+        with open(KEY_FILE, "wb") as fh:
+            fh.write(
+                key.private_bytes(
+                    encoding=serialization.Encoding.PEM,
+                    format=serialization.PrivateFormat.TraditionalOpenSSL,
+                    encryption_algorithm=serialization.NoEncryption(),
+                )
+            )
+        with open(CERT_FILE, "wb") as fh:
+            fh.write(cert.public_bytes(serialization.Encoding.PEM))
+        return True
+    except Exception as e:
+        print(f"[phone_scan] No se pudo generar el certificado con cryptography: {e}")
+        return False
+
+
 def _ensure_cert() -> bool:
-    """Genera un certificado autofirmado si no existe (no se versiona la clave)."""
+    """Genera un certificado autofirmado si no existe (no se versiona la clave).
+
+    Intenta primero con el binario `openssl` del sistema y, si no está
+    disponible, usa la librería Python `cryptography` (ver requirements.txt).
+    """
     if os.path.exists(CERT_FILE) and os.path.exists(KEY_FILE):
         return True
     try:
-        import shutil as _shutil
-        import subprocess
-
-        openssl = _shutil.which("openssl")
-        if not openssl:
-            return False
-        os.makedirs(_CERT_DIR, exist_ok=True)
-        subprocess.run(
-            [
-                openssl, "req", "-x509", "-newkey", "rsa:2048", "-nodes",
-                "-keyout", KEY_FILE, "-out", CERT_FILE, "-days", "3650",
-                "-subj", "/CN=digicable-inventory",
-            ],
-            check=True,
-            capture_output=True,
-            timeout=30,
-        )
-        return True
+        if _ensure_cert_openssl():
+            return True
     except Exception as e:
-        print(f"[phone_scan] No se pudo generar el certificado: {e}")
-        return False
+        print(f"[phone_scan] openssl no disponible o falló: {e}")
+    return _ensure_cert_python()
 
 _SCAN_PAGE = """<!doctype html>
 <html lang="es">

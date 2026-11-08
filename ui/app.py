@@ -1,11 +1,12 @@
-import customtkinter as ctk
 import queue
 
+import customtkinter as ctk
+
+from core.phone_scan import start_scan_server
+from database.repository import get_all_warehouses
+from ui.colors import *
 from ui.login_frame import LoginFrame
 from ui.sidebar import Sidebar
-from ui.colors import *
-from database.repository import get_all_warehouses
-from core.phone_scan import start_scan_server
 
 
 class App(ctk.CTk):
@@ -159,12 +160,13 @@ class App(ctk.CTk):
 
     def _get_view_class(self, name: str):
         from ui.views.dashboard import DashboardView
+        from ui.views.employees import EmployeesView
+        from ui.views.movements import MovementsView
         from ui.views.products import ProductsView
         from ui.views.suppliers import SuppliersView
-        from ui.views.employees import EmployeesView
-        from ui.views.vehicles import VehiclesView
-        from ui.views.movements import MovementsView
+        from ui.views.system_data import SystemDataView
         from ui.views.users import UsersView
+        from ui.views.vehicles import VehiclesView
 
         return {
             "dashboard": DashboardView,
@@ -174,6 +176,7 @@ class App(ctk.CTk):
             "vehicles": VehiclesView,
             "movements": MovementsView,
             "users": UsersView,
+            "system_data": SystemDataView,
         }[name]
 
     def _logout(self):

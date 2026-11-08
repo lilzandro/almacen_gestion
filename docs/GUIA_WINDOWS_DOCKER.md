@@ -6,6 +6,8 @@ dentro de un contenedor. La ventana del sistema se muestra en tu escritorio
 gracias a **VcXsrv**.
 
 Si preferís instalar Python directamente, usá la guía `GUIA_WINDOWS.md`.
+Para el detalle de las pantallas y funciones, consultá el **Manual de usuario**:
+`MANUAL_DE_USUARIO.md` o `MANUAL_DE_USUARIO.pdf`.
 
 ---
 
@@ -84,21 +86,23 @@ La primera vez te pedirá cambiar la contraseña. Hacelo.
 
 | Módulo | Qué hace |
 |--------|----------|
-| Panel (Dashboard) | Resumen de productos disponibles, entradas, salidas y devoluciones, y últimos movimientos. |
-| Productos | Alta, edición y baja de productos. Agrupados por modelo, con unidades individuales. |
-| Movimientos | Entradas, salidas, devoluciones y asignaciones. Exportable a PDF. |
-| Proveedores / Empleados / Vehículos | Registro de datos maestros. |
+| Panel (Dashboard) | Resumen de productos disponibles, entradas, salidas, devoluciones y últimos movimientos. |
+| Productos | Alta, edición, escaneo y exportación PDF. Agrupados por modelo, con unidades individuales. |
+| Movimientos | Salidas y devoluciones, historial completo y reportes PDF. Editar y eliminar es solo para `admin`. |
+| Proveedores / Empleados / Vehículos | Datos maestros. El `admin` puede crear, editar y eliminar; el `supervisor` solo consulta. |
 | Usuarios | Solo para `admin`. |
+| Datos del sistema | Solo para `admin`: respaldo y restauración de la base de datos. |
 
 **Roles:**
-- `admin`: acceso total, incluida la gestión de usuarios.
-- `supervisor`: no gestiona usuarios ni elimina registros.
+- `admin`: acceso total, incluida la gestión de usuarios, datos del sistema, datos maestros y eliminación de productos/movimientos.
+- `supervisor`: opera el inventario y registra movimientos; puede consultar y editar productos y generar reportes. No gestiona usuarios, datos del sistema ni datos maestros, y no edita ni elimina movimientos ni elimina productos/grupos.
 
 **Almacén activo:** la barra superior permite cambiar entre almacenes. Todo lo
 que veas corresponde al almacén seleccionado.
 
-**Productos con movimientos:** no se borran definitivamente en uso normal; el
-sistema conserva el historial y el producto queda **inactivo** (baja lógica).
+**Productos con movimientos:** al eliminar un producto o grupo, el sistema
+conserva el historial de movimientos y los datos del producto en ese historial.
+El producto deja de aparecer en el inventario activo.
 
 ---
 
@@ -132,6 +136,11 @@ reconstruyas el contenedor.
 
 **Para restaurar:** con el sistema cerrado, reemplazá la carpeta `data` del
 proyecto por la copia.
+
+En Docker, la copia de la carpeta `data` es la forma más simple de respaldar.
+También podés usar **Datos del sistema** desde la aplicación, pero guardá el
+archivo `.db` en una ubicación accesible desde el contenedor o copialo fuera de
+él antes de reconstruir la imagen.
 
 ---
 
@@ -179,3 +188,5 @@ El teléfono y la PC deben estar en la **misma red Wi-Fi**.
 - Cambiá la contraseña inicial `admin123` en el primer ingreso.
 - Cerrá la sesión con **Cerrar Sesión** antes de apagar el equipo.
 - Hacé respaldos periódicos de la carpeta `data` (sección 7).
+- Revisá el correo y el mensaje de WhatsApp antes de enviarlos.
+- Para el detalle de cada pantalla, usá el **Manual de usuario**.

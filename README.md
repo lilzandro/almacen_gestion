@@ -6,12 +6,15 @@ Aplicación de escritorio para gestionar inventario de almacén. Desarrollada co
 
 ## Características
 
-- Gestión de productos con código de barras, serial y MAC
+- Gestión de productos agrupados por modelo, con código de barras, serial, MAC y stock
+- Escaneo de códigos con lector físico o con la cámara del teléfono (misma red Wi-Fi)
 - Control de proveedores, empleados y vehículos
-- Registro de movimientos de stock (entrada, salida, devolución, asignación)
-- Exportación de reportes a PDF
+- Registro de salidas y devoluciones, con comprobantes de entrega y devolución
+- Historial de movimientos con reportes diarios, semanales, mensuales, ranking y cierre crítico
+- Envío de reportes por correo con PDF adjunto (Outlook) y por WhatsApp
+- Respaldo y restauración de la base de datos desde **Datos del sistema**
 - Control de acceso por roles (`admin` / `supervisor`)
-- Baja lógica de productos
+- Exportación de inventario y movimientos a PDF
 
 ---
 
@@ -57,6 +60,7 @@ python main.py
 Docker permite correr la app sin instalar Python ni dependencias en el host. La ventana gráfica se muestra en el escritorio del sistema operativo.
 
 **Guías completas:**
+- 📘 [Manual de usuario](docs/MANUAL_DE_USUARIO.md) — operación diaria, productos, movimientos, reportes, respaldos y roles.
 - 🪟 [Guía de instalación en Windows (sin Docker)](docs/GUIA_WINDOWS.md) — instalación, uso, respaldos y problemas frecuentes.
 - 🐳 [Guía de instalación en Windows con Docker](docs/GUIA_WINDOWS_DOCKER.md) — Docker Desktop + VcXsrv, uso, respaldos y problemas frecuentes.
 
@@ -125,8 +129,13 @@ scanner_inventory/
 │   └── repository.py       # CRUD por entidad
 ├── core/
 │   ├── auth.py             # Login y hash de contraseña
+│   ├── database_backup.py  # Respaldo y restauración SQLite
+│   ├── email_report.py     # Correo con PDF adjunto (Outlook)
 │   ├── export.py           # Reportes PDF (datos)
-│   └── pdf_export.py       # Render PDF (reportlab)
+│   ├── pdf_export.py       # Render PDF (reportlab)
+│   ├── phone_scan.py       # Servidor de escaneo móvil
+│   ├── report_config.py    # Destinos de correo y WhatsApp
+│   └── whatsapp_report.py  # Apertura de WhatsApp y PDF listo
 ├── ui/
 │   ├── app.py              # Router de vistas
 │   ├── login_frame.py
@@ -134,6 +143,7 @@ scanner_inventory/
 │   ├── widgets.py          # Componentes reutilizables
 │   └── views/              # Una vista por módulo
 ├── docs/
+│   ├── MANUAL_DE_USUARIO.md      # Manual de usuario completo
 │   └── GUIA_WINDOWS.md           # Guía de instalación y uso en Windows
 ├── tests/                  # Pruebas (pytest)
 ├── data/                   # Base de datos persistida (Docker)
@@ -145,9 +155,11 @@ scanner_inventory/
 
 ## Consideraciones
 
-- **Roles:** `admin` tiene acceso total incluyendo gestión de usuarios. `supervisor` no puede gestionar usuarios ni eliminar registros.
-- **Productos con movimientos:** `delete_product()` borra físicamente conservando el historial en `movement_items`; `deactivate_product()` los deja en estado `inactivo`.
+- **Roles:** `admin` tiene acceso total, incluidos usuarios, datos del sistema y datos maestros. `supervisor` opera inventario y movimientos, pero no gestiona usuarios/datos del sistema/datos maestros ni edita o elimina movimientos.
+- **Productos con movimientos:** al eliminar un producto o grupo se conserva el historial en `movement_items`; los productos inactivos se pueden reactivar desde el escaneo (solo `admin`).
 - **Campos únicos:** `barcode`, `cedula` (empleados) y `placa` (vehículos) no permiten duplicados.
 - **Reportes PDF:** requieren `reportlab` (incluido en `requirements.txt`). Si falta, la app abre igual y al exportar muestra un aviso para instalarlo.
+- **Reportes por correo/WhatsApp:** los destinos se configuran en **Reportes → Configurar destinos** y se guardan en `%APPDATA%\DigiCable\config.json`. `REPORT_EMAIL_TO` y `WHATSAPP_TO` tienen prioridad.
+- **Respaldos:** **Datos del sistema** crea un `.db` consistente y, al restaurar, un respaldo de seguridad en `%APPDATA%\DigiCable\backups`.
 - **Base de datos:** SQLite en modo WAL. No requiere servidor de base de datos.
 - **Primera ejecución:** la base de datos se crea automáticamente con el usuario `admin` al iniciar.

@@ -1,4 +1,5 @@
 import customtkinter as ctk
+
 from ui.colors import *
 
 try:
@@ -66,6 +67,7 @@ class Sidebar(ctk.CTkFrame):
         ]
         if current_user["role"] == "admin":
             items.append(("⚙️  Usuarios", "users"))
+            items.append(("🗄️  Datos del sistema", "system_data"))
 
         for label, view in items:
             btn = ctk.CTkButton(

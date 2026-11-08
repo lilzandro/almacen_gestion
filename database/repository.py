@@ -1,5 +1,6 @@
 import re
 import time as _time
+
 from database.connection import get_connection
 
 _cache: dict = {}
@@ -40,6 +41,11 @@ def _invalidate_prefix(prefix):
     for key in list(_cache.keys()):
         if isinstance(key, tuple) and key[0] == prefix:
             _cache.pop(key, None)
+
+
+def clear_cache():
+    """Vacía la caché en memoria (por ejemplo, tras restaurar un respaldo)."""
+    _cache.clear()
 
 
 # ── WAREHOUSES ────────────────────────────────────────────────────────────────

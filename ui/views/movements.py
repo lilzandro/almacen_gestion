@@ -1,7 +1,8 @@
+import os
+import tempfile
 import tkinter as tk
 import tkinter.font as tkfont
 import customtkinter as ctk
-import os
 from datetime import datetime, timedelta
 from tkinter import filedialog, ttk
 from PIL import Image, ImageTk
@@ -30,6 +31,7 @@ from database.repository import (
     update_movement,
     delete_movement,
 )
+from core import report_config
 from core.export import (
     export_critical_closing,
     export_movements,
@@ -89,6 +91,17 @@ TYPE_STYLES = {
 }
 
 
+def movement_send_subject(detail):
+    """Asunto/caption para enviar el PDF de un movimiento individual."""
+    label = TYPE_STYLES.get(
+        detail.get("type"), (detail.get("type") or "Movimiento",)
+    )[0]
+    return (
+        f"DigiCable · Movimiento #{detail.get('id', '—')} · {label}"
+        f" · {detail.get('timestamp') or ''}"
+    ).strip()
+
+
 def _pick_mono_family(widget):
     try:
         families = set(tkfont.families(widget))
@@ -124,6 +137,138 @@ def _split_ts(ts):
         date, time_ = s.split(" ", 1)
         return date, time_[:8]
     return s, "—"
+
+
+class _DestinationsDialog(BaseDialog):
+    """Configura los destinos de correo y WhatsApp para enviar reportes."""
+
+    def __init__(self, parent, on_saved=None):
+        super().__init__(parent)
+        self.title("Destinos de envío")
+        self.geometry("500x450")
+        self.resizable(False, False)
+        self.configure(fg_color=DSG_BG)
+        self.transient(parent)
+        self._on_saved = on_saved
+
+        header = ctk.CTkFrame(self, fg_color=DSG_BRAND, height=58)
+        header.pack(fill="x")
+        header.pack_propagate(False)
+        ctk.CTkLabel(
+            header, text="DESTINOS DE ENVÍO",
+            font=ctk.CTkFont(size=19, weight="bold"), text_color="white",
+        ).pack(side="left", padx=20)
+
+        footer = ctk.CTkFrame(self, fg_color=DSG_BG)
+        footer.pack(side="bottom", fill="x", padx=16, pady=(0, 14))
+        ctk.CTkButton(
+            footer, text="Guardar", height=40,
+            font=ctk.CTkFont(size=14, weight="bold"),
+            fg_color=DSG_PRIMARY, hover_color=DSG_PRIMARY_HOVER,
+            text_color="white", corner_radius=9, command=self._save,
+        ).pack(side="left", fill="x", expand=True, padx=(0, 8))
+        ctk.CTkButton(
+            footer, text="Cancelar", height=40,
+            font=ctk.CTkFont(size=14, weight="bold"),
+            fg_color=DSG_SURF, hover_color=DSG_ROW_HOVER,
+            border_width=1, border_color=DSG_BORDER_CTRL,
+            text_color=DSG_TEXT_BODY, corner_radius=9,
+            command=self.destroy,
+        ).pack(side="left", fill="x", expand=True)
+
+        body = ctk.CTkFrame(self, fg_color=DSG_SURF, corner_radius=10)
+        body.pack(fill="both", expand=True, padx=16, pady=14)
+
+        env_email = report_config.env_override("email")
+        env_whatsapp = report_config.env_override("whatsapp")
+
+        ctk.CTkLabel(
+            body, text="Correo destino", anchor="w",
+            font=ctk.CTkFont(size=13, weight="bold"), text_color=DSG_TEXT,
+        ).pack(fill="x", padx=16, pady=(14, 4))
+        self._email_e = ctk.CTkEntry(
+            body, height=36, font=ctk.CTkFont(size=13),
+            fg_color=DSG_SURF_SUB, border_color=DSG_BORDER_CTRL,
+            text_color=DSG_TEXT, placeholder_text="destino@ejemplo.com",
+        )
+        self._email_e.pack(fill="x", padx=16)
+        self._email_e.insert(0, report_config.get_email_to())
+        if env_email:
+            self._email_e.configure(state="disabled")
+
+        ctk.CTkLabel(
+            body, text="WhatsApp destino", anchor="w",
+            font=ctk.CTkFont(size=13, weight="bold"), text_color=DSG_TEXT,
+        ).pack(fill="x", padx=16, pady=(12, 4))
+        self._whatsapp_e = ctk.CTkEntry(
+            body, height=36, font=ctk.CTkFont(size=13),
+            fg_color=DSG_SURF_SUB, border_color=DSG_BORDER_CTRL,
+            text_color=DSG_TEXT, placeholder_text="584121234567",
+        )
+        self._whatsapp_e.pack(fill="x", padx=16)
+        self._whatsapp_e.insert(0, report_config.get_whatsapp_to())
+        if env_whatsapp:
+            self._whatsapp_e.configure(state="disabled")
+
+        ctk.CTkLabel(
+            body,
+            text="Correo: abre Outlook con el PDF ya adjunto (revisalo y pulsá "
+                 "Enviar). WhatsApp: abre el chat con el destino y deja el PDF "
+                 "copiado al portapapeles (Ctrl+V en el chat para adjuntarlo; "
+                 "también se abre el Explorador con el archivo seleccionado).",
+            font=ctk.CTkFont(size=11), text_color=DSG_TEXT_SEC2,
+            wraplength=440, justify="left", anchor="w",
+        ).pack(fill="x", padx=16, pady=(8, 0))
+
+        if env_email or env_whatsapp:
+            vars_ = []
+            if env_email:
+                vars_.append("REPORT_EMAIL_TO")
+            if env_whatsapp:
+                vars_.append("WHATSAPP_TO")
+            ctk.CTkLabel(
+                body,
+                text="Definido por variable de entorno (tiene prioridad): "
+                     + " · ".join(vars_),
+                font=ctk.CTkFont(size=11), text_color=DSG_TEXT_SEC2,
+                wraplength=440, justify="left", anchor="w",
+            ).pack(fill="x", padx=16, pady=(8, 0))
+
+        show_centered(self)
+        self.bind("<Escape>", lambda e: self.destroy())
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
+        self.after(50, self.grab_set)
+
+    def _save(self):
+        email = self._email_e.get().strip()
+        whatsapp = report_config.normalize_phone(self._whatsapp_e.get())
+        if email and (
+            "@" not in email or " " in email
+            or email.startswith("@") or email.endswith("@")
+        ):
+            MessageDialog(
+                self, "Correo inválido",
+                "Escribí una dirección válida, por ejemplo destino@ejemplo.com.",
+                is_warning=True,
+            )
+            return
+        if whatsapp and not (8 <= len(whatsapp) <= 15):
+            MessageDialog(
+                self, "WhatsApp inválido",
+                "Usá el formato internacional sin '+': por ejemplo 584121234567.",
+                is_warning=True,
+            )
+            return
+        if not email and not whatsapp:
+            MessageDialog(
+                self, "Sin destinos",
+                "Cargá al menos un correo o un WhatsApp.", is_warning=True,
+            )
+            return
+        report_config.set_destinations(email, whatsapp)
+        if self._on_saved:
+            self._on_saved()
+        self.destroy()
 
 
 class _ReportsDialog(BaseDialog):
@@ -234,42 +379,45 @@ class _ReportsDialog(BaseDialog):
                 command=lambda k=kind: self._apply_dates(k),
             ).pack(side="left", padx=(0, 6))
 
-        self._envio_label = ctk.CTkLabel(
-            body, text="Envío (opcional)", anchor="w",
+        self._envio_head = ctk.CTkFrame(body, fg_color=DSG_SURF)
+        self._envio_head.pack(fill="x", padx=16, pady=(16, 2))
+        ctk.CTkLabel(
+            self._envio_head, text="Envío (opcional)", anchor="w",
             font=ctk.CTkFont(size=13, weight="bold"), text_color=DSG_TEXT,
-        )
-        self._envio_label.pack(fill="x", padx=16, pady=(16, 2))
+        ).pack(side="left")
+        ctk.CTkButton(
+            self._envio_head, text="Configurar destinos…", height=28, width=165,
+            font=ctk.CTkFont(size=12),
+            fg_color=DSG_SURF, hover_color=DSG_ROW_HOVER,
+            border_width=1, border_color=DSG_BORDER_CTRL,
+            text_color=DSG_TEXT_BODY, corner_radius=7,
+            command=self._open_destinations,
+        ).pack(side="right")
 
-        email_ok = bool(os.environ.get("REPORT_EMAIL_TO"))
-        whatsapp_ok = bool(os.environ.get("WHATSAPP_TO"))
         self._email_var = tk.BooleanVar(value=False)
         self._whatsapp_var = tk.BooleanVar(value=False)
-        ctk.CTkCheckBox(
-            body, text="Abrir correo (adjuntás el PDF a mano)",
+        self._email_cb = ctk.CTkCheckBox(
+            body, text="Enviar por correo (con el PDF adjunto)",
             variable=self._email_var,
             font=ctk.CTkFont(size=13), text_color=DSG_TEXT_BODY,
             fg_color=DSG_BRAND, hover_color=DSG_PRIMARY_HOVER,
-            state="normal" if email_ok else "disabled",
-        ).pack(anchor="w", padx=16, pady=2)
-        ctk.CTkCheckBox(
-            body, text="Abrir WhatsApp (adjuntás el PDF a mano)",
+        )
+        self._email_cb.pack(anchor="w", padx=16, pady=2)
+        self._whatsapp_cb = ctk.CTkCheckBox(
+            body, text="Abrir WhatsApp (PDF copiado; Ctrl+V)",
             variable=self._whatsapp_var,
             font=ctk.CTkFont(size=13), text_color=DSG_TEXT_BODY,
             fg_color=DSG_BRAND, hover_color=DSG_PRIMARY_HOVER,
-            state="normal" if whatsapp_ok else "disabled",
-        ).pack(anchor="w", padx=16, pady=2)
+        )
+        self._whatsapp_cb.pack(anchor="w", padx=16, pady=2)
 
-        if not (email_ok and whatsapp_ok):
-            missing = []
-            if not email_ok:
-                missing.append("REPORT_EMAIL_TO")
-            if not whatsapp_ok:
-                missing.append("WHATSAPP_TO")
-            ctk.CTkLabel(
-                body, text="Sin configurar: " + " · ".join(missing),
-                font=ctk.CTkFont(size=11), text_color=DSG_TEXT_SEC2,
-                wraplength=480, justify="left", anchor="w",
-            ).pack(fill="x", padx=16, pady=(4, 0))
+        self._envio_hint = ctk.CTkLabel(
+            body, text="", font=ctk.CTkFont(size=11),
+            text_color=DSG_TEXT_SEC2, wraplength=480,
+            justify="left", anchor="w",
+        )
+        self._envio_hint.pack(fill="x", padx=16, pady=(4, 0))
+        self._refresh_destinations()
 
         self._status = ctk.CTkLabel(
             body, text="", font=ctk.CTkFont(size=12),
@@ -301,6 +449,43 @@ class _ReportsDialog(BaseDialog):
             entry.delete(0, "end")
             entry.insert(0, value.isoformat())
 
+    def _open_destinations(self):
+        _DestinationsDialog(self, self._refresh_destinations)
+
+    def _refresh_destinations(self):
+        email = report_config.get_email_to()
+        whatsapp = report_config.get_whatsapp_to()
+
+        if email:
+            self._email_cb.configure(state="normal")
+        else:
+            self._email_var.set(False)
+            self._email_cb.configure(state="disabled")
+        if whatsapp:
+            self._whatsapp_cb.configure(state="normal")
+        else:
+            self._whatsapp_var.set(False)
+            self._whatsapp_cb.configure(state="disabled")
+
+        parts = []
+        if email:
+            suffix = " (variable de entorno)" if report_config.env_override("email") else ""
+            parts.append(f"Correo: {email}{suffix}")
+        if whatsapp:
+            suffix = " (variable de entorno)" if report_config.env_override("whatsapp") else ""
+            parts.append(f"WhatsApp: +{whatsapp}{suffix}")
+        if email and whatsapp:
+            text = " · ".join(parts)
+        else:
+            missing = []
+            if not email:
+                missing.append("correo")
+            if not whatsapp:
+                missing.append("WhatsApp")
+            prefix = (" · ".join(parts) + " · ") if parts else ""
+            text = prefix + "Sin configurar: " + " y ".join(missing)
+        self._envio_hint.configure(text=text)
+
     def _on_type_changed(self, kind):
         self._kind.set(kind)
         if kind == "Selección actual":
@@ -313,14 +498,14 @@ class _ReportsDialog(BaseDialog):
         # Tipo y fechas van antes de "Envío (opcional)"; el pack tardío de
         # _dates_frame los mandaba al final del diálogo.
         if kind in ("Diario", "Semanal", "Mensual"):
-            self._tipo_frame.pack(fill="x", before=self._envio_label)
+            self._tipo_frame.pack(fill="x", before=self._envio_head)
         else:
             self._tipo_frame.pack_forget()
         if kind == "Diario":
             self._dates_frame.pack_forget()
         else:
             self._dates_frame.pack(
-                fill="x", pady=(10, 0), before=self._envio_label
+                fill="x", pady=(10, 0), before=self._envio_head
             )
 
     def _parse_dates(self):
@@ -613,14 +798,6 @@ class MovementsView(ctk.CTkFrame):
             text_color=DSG_TEXT_BODY, corner_radius=9, height=36,
             command=self._open_reports,
         ).pack(side="left", padx=(0, 10))
-        self._export_btn = ctk.CTkButton(
-            acc, text="↓  Exportar PDF", font=self._fonts["btn_sec"],
-            fg_color=DSG_SURF, hover_color=DSG_ROW_HOVER,
-            border_color=DSG_BORDER_CTRL, border_width=1,
-            text_color=DSG_TEXT_BODY, corner_radius=9, height=36,
-            command=self._export,
-        )
-        self._export_btn.pack(side="left", padx=(0, 10))
         ctk.CTkButton(
             acc, text="+  Registrar movimiento", font=self._fonts["btn"],
             fg_color=DSG_PRIMARY, hover_color=DSG_PRIMARY_HOVER,
@@ -1324,51 +1501,6 @@ class MovementsView(ctk.CTkFrame):
     def _open_reports(self):
         _ReportsDialog(self, self)
 
-    def _export(self):
-        wh = self._warehouse_id()
-        types = None if self._tipo is None else self.TYPE_ALIASES[self._tipo]
-        self._set_export_busy(True)
-        self.update_idletasks()
-        try:
-            rows = get_movements_flat(
-                warehouse_id=wh, search=self._busqueda, movement_types=types
-            )
-        finally:
-            self._set_export_busy(False)
-        if not rows:
-            MessageDialog(self, "Aviso",
-                          "No hay movimientos para exportar con el filtro actual.")
-            return
-        path = filedialog.asksaveasfilename(
-            defaultextension=".pdf",
-            filetypes=[("PDF", "*.pdf")],
-            initialfile="movimientos.pdf",
-        )
-        if not path:
-            return
-        self._set_export_busy(True)
-        self.update_idletasks()
-        try:
-            export_movements(
-                path,
-                movements=rows,
-                warehouse_name=self._warehouse_name(),
-                filters_text=self._active_desc(),
-                generated_by=self.current_user.get("username", ""),
-            )
-        except Exception as e:
-            MessageDialog(self, "Error", f"No se pudo generar el PDF:\n{e}")
-            return
-        finally:
-            self._set_export_busy(False)
-        MessageDialog(self, "Éxito", f"Reporte PDF generado en:\n{path}")
-
-    def _set_export_busy(self, busy):
-        self._export_btn.configure(
-            state="disabled" if busy else "normal",
-            text="Generando…" if busy else "↓  Exportar PDF",
-        )
-
     # ── utilidades ───────────────────────────────────────────────────────
     @staticmethod
     def _fmt_short(ts):
@@ -1534,36 +1666,57 @@ class _MovementInfoDialog(BaseDialog):
 
         if on_edit is not None and mtype in self.EDITABLE:
             ctk.CTkButton(
-                foot, text="✎  Editar", font=ctk.CTkFont(size=15, weight="bold"),
+                foot, text="✎  Editar", width=96,
+                font=ctk.CTkFont(size=14, weight="bold"),
                 fg_color=DSG_SURF, hover_color=DSG_ROW_HOVER,
                 border_width=1, border_color=DSG_BORDER_CTRL,
                 text_color=DSG_BRAND, corner_radius=9, height=40,
                 command=self._edit,
-            ).pack(side="left", padx=(20, 8), pady=12)
+            ).pack(side="left", padx=(20, 6), pady=12)
         if on_delete is not None:
             ctk.CTkButton(
-                foot, text="✕  Eliminar", font=ctk.CTkFont(size=15, weight="bold"),
+                foot, text="✕  Eliminar", width=104,
+                font=ctk.CTkFont(size=14, weight="bold"),
                 fg_color=DSG_SURF, hover_color=DSG_HOVER_DANGER_BG,
                 border_width=1, border_color=DSG_DANGER,
                 text_color=DSG_DANGER, corner_radius=9, height=40,
                 command=self._delete,
-            ).pack(side="left", padx=(8, 8), pady=12)
+            ).pack(side="left", padx=(0, 6), pady=12)
         ctk.CTkButton(
-            foot, text="⧉  Copiar", font=ctk.CTkFont(size=15),
+            foot, text="⧉  Copiar", width=96,
+            font=ctk.CTkFont(size=14),
             fg_color=DSG_SURF, hover_color=DSG_ROW_HOVER,
             border_width=1, border_color=DSG_BORDER_CTRL,
             text_color=DSG_TEXT_SEC, corner_radius=9, height=40,
             command=self._copy,
-        ).pack(side="left", padx=(8, 8), pady=12)
+        ).pack(side="left", padx=(0, 6), pady=12)
         ctk.CTkButton(
-            foot, text="🖨  Imprimir", font=ctk.CTkFont(size=15),
+            foot, text="🖨  Imprimir", width=104,
+            font=ctk.CTkFont(size=14),
             fg_color=DSG_SURF, hover_color=DSG_ROW_HOVER,
             border_width=1, border_color=DSG_BORDER_CTRL,
             text_color=DSG_TEXT_SEC, corner_radius=9, height=40,
             command=self._print,
-        ).pack(side="left", padx=(8, 8), pady=12)
+        ).pack(side="left", padx=(0, 6), pady=12)
         ctk.CTkButton(
-            foot, text="Cerrar", font=ctk.CTkFont(size=15, weight="bold"),
+            foot, text="✉  Correo", width=96,
+            font=ctk.CTkFont(size=14),
+            fg_color=DSG_SURF, hover_color=DSG_ROW_HOVER,
+            border_width=1, border_color=DSG_BORDER_CTRL,
+            text_color=DSG_TEXT_SEC, corner_radius=9, height=40,
+            command=self._send_email,
+        ).pack(side="left", padx=(0, 6), pady=12)
+        ctk.CTkButton(
+            foot, text="WhatsApp", width=104,
+            font=ctk.CTkFont(size=14),
+            fg_color=DSG_SURF, hover_color=DSG_ROW_HOVER,
+            border_width=1, border_color=DSG_BORDER_CTRL,
+            text_color=DSG_TEXT_SEC, corner_radius=9, height=40,
+            command=self._send_whatsapp,
+        ).pack(side="left", padx=(0, 6), pady=12)
+        ctk.CTkButton(
+            foot, text="Cerrar", width=100,
+            font=ctk.CTkFont(size=14, weight="bold"),
             fg_color=DSG_BRAND, hover_color=DSG_BRAND_DARK,
             text_color="white", corner_radius=9, height=40,
             command=self.destroy,
@@ -1704,28 +1857,104 @@ class _MovementInfoDialog(BaseDialog):
         except Exception:
             pass
 
+    def _build_pdf(self, path):
+        """Genera el PDF de detalle de este movimiento en `path`."""
+        d = self._detail
+        from core.export import export_single_movement
+
+        export_single_movement(
+            path, d,
+            quantity_text=self._quantity_text(d),
+            employee_text=self._employee_text(d),
+        )
+
     def _print(self):
         """Genera un PDF con el detalle completo de este movimiento."""
-        d = self._detail
         path = filedialog.asksaveasfilename(
             defaultextension=".pdf", filetypes=[("PDF", "*.pdf")],
-            initialfile=f"movimiento_{d['id']}.pdf",
+            initialfile=f"movimiento_{self._detail['id']}.pdf",
         )
         if not path:
             return
-        from core.export import export_single_movement
         try:
-            export_single_movement(
-                path, d,
-                quantity_text=self._quantity_text(d),
-                employee_text=self._employee_text(d),
-            )
+            self._build_pdf(path)
         except Exception as e:
             MessageDialog(
                 self, "Error", f"No se pudo generar el PDF:\n{e}", is_error=True
             )
             return
         MessageDialog(self, "Éxito", f"Reporte generado en:\n{path}")
+
+    def _temp_pdf(self):
+        """Ruta temporal del PDF para enviar sin pedir ubicación al usuario."""
+        folder = os.path.join(tempfile.gettempdir(), "DigiCable")
+        os.makedirs(folder, exist_ok=True)
+        return os.path.join(folder, f"movimiento_{self._detail['id']}.pdf")
+
+    def _prepare_send(self):
+        """Genera el PDF temporal. Devuelve (ruta, mensaje_de_error)."""
+        path = self._temp_pdf()
+        try:
+            self._build_pdf(path)
+        except Exception as e:
+            return None, f"No se pudo generar el PDF:\n{e}"
+        return path, None
+
+    def _send_email(self):
+        if not report_config.get_email_to():
+            MessageDialog(
+                self, "Sin correo destino",
+                "Configurá el correo en Movimientos → Reportes → "
+                "Configurar destinos.", is_warning=True,
+            )
+            return
+        path, error = self._prepare_send()
+        if error:
+            MessageDialog(self, "Error", error, is_error=True)
+            return
+        try:
+            from core.email_report import send_report_email
+
+            send_report_email(
+                path, movement_send_subject(self._detail),
+                f"Adjunto el detalle del movimiento #{self._detail['id']}.",
+            )
+        except Exception as e:
+            MessageDialog(
+                self, "Error", f"No se pudo abrir el correo:\n{e}", is_error=True
+            )
+            return
+        MessageDialog(
+            self, "Éxito",
+            f"Correo abierto con el PDF adjunto.\nArchivo: {path}",
+        )
+
+    def _send_whatsapp(self):
+        if not report_config.get_whatsapp_to():
+            MessageDialog(
+                self, "Sin WhatsApp destino",
+                "Configurá el WhatsApp en Movimientos → Reportes → "
+                "Configurar destinos.", is_warning=True,
+            )
+            return
+        path, error = self._prepare_send()
+        if error:
+            MessageDialog(self, "Error", error, is_error=True)
+            return
+        try:
+            from core.whatsapp_report import send_report_whatsapp
+
+            send_report_whatsapp(path, movement_send_subject(self._detail))
+        except Exception as e:
+            MessageDialog(
+                self, "Error", f"No se pudo abrir WhatsApp:\n{e}", is_error=True
+            )
+            return
+        MessageDialog(
+            self, "Éxito",
+            f"WhatsApp abierto.\nEl PDF quedó copiado al portapapeles: presioná "
+            f"Ctrl+V en el chat para adjuntarlo.\nArchivo: {path}",
+        )
 
     def _edit(self):
         self.destroy()
