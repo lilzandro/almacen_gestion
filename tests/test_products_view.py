@@ -48,3 +48,45 @@ def test_editar_producto_la_ventana_entra_el_contenido_real(monkeypatch):
         )
     finally:
         root.destroy()
+
+
+@pytest.mark.skipif(
+    not os.environ.get("DISPLAY"), reason="requiere un servidor X (Tkinter)"
+)
+def test_group_edit_add_more_acepta_fila_sqlite(monkeypatch):
+    """'Agregar más' recibía un sqlite3.Row y llamaba .get(), inexistente."""
+    import sqlite3
+
+    import ui.views.products as products_mod
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    row = conn.execute(
+        "SELECT 'AP' AS name, 'TP-Link' AS brand, 'EAP225' AS modelo, "
+        "2 AS unit_count, 2 AS disponible_count, 0 AS has_serial, "
+        "1 AS supplier_id, 'TP-Link Andina' AS supplier_name, "
+        "'und' AS unit, 2 AS total_quantity"
+    ).fetchone()
+
+    capturado = {}
+
+    class _FakeRegistrar:
+        def __init__(self, parent, on_save=None, products_view=None,
+                     prefill=None):
+            capturado["prefill"] = prefill
+
+    monkeypatch.setattr(products_mod, "_RegistrarProductoDialog", _FakeRegistrar)
+    monkeypatch.setattr(products_mod, "get_all_suppliers", lambda: [])
+
+    root = tk.Tk()
+    root.withdraw()
+    dlg = products_mod._GroupEditDialog(
+        root, row, on_save=lambda *a: None, on_add_more=lambda *a: None
+    )
+    try:
+        dlg._open_add_more()
+        assert capturado["prefill"]["name"] == "AP"
+        assert capturado["prefill"]["modelo"] == "EAP225"
+    finally:
+        dlg.destroy()
+        root.destroy()

@@ -1480,7 +1480,8 @@ class _GroupEditDialog(BaseDialog):
         self.on_save = on_save
         self.on_add_more = on_add_more
         self.on_delete = on_delete
-        self._group_data = group_data
+        # Puede llegar un sqlite3.Row; el diálogo asume un mapping con .get().
+        self._group_data = dict(group_data)
 
         suppliers = get_all_suppliers()
         self._supplier_map = {"Sin proveedor": None}
