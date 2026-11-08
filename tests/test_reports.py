@@ -159,11 +159,12 @@ def test_split_ranking_separa_mas_y_menos_movidos_sin_repetir():
     assert [r["name"] for r in bottom] == ["P14", "P13", "P12"]
 
 
-def test_send_report_email_sin_to_avisa(monkeypatch):
+def test_send_report_email_sin_to_avisa(monkeypatch, tmp_path):
     from core.email_report import send_report_email
 
     monkeypatch.delenv("REPORT_EMAIL_TO", raising=False)
-    with pytest.raises(RuntimeError, match="REPORT_EMAIL_TO"):
+    monkeypatch.setenv("DIGICABLE_CONFIG_DIR", str(tmp_path))
+    with pytest.raises(RuntimeError, match="correo destino"):
         send_report_email("x.pdf", "asunto")
 
 
@@ -171,6 +172,9 @@ def test_send_report_email_abre_el_enlace(monkeypatch):
     import core.email_report as email_report
 
     monkeypatch.setenv("REPORT_EMAIL_TO", "destino@ejemplo.com")
+    monkeypatch.setattr(email_report, "_outlook_available", lambda: False)
+    monkeypatch.setattr(email_report, "_copy_file_to_clipboard", lambda p: True)
+    monkeypatch.setattr(email_report, "_reveal_file", lambda p: None)
     captured = {}
     monkeypatch.setattr(
         email_report.webbrowser, "open",
@@ -178,8 +182,36 @@ def test_send_report_email_abre_el_enlace(monkeypatch):
     )
     email_report.send_report_email("reporte.pdf", "Reporte diario", "cuerpo")
     assert captured["url"].startswith("mailto:destino@ejemplo.com?subject=")
-    assert "Adjuntar" in captured["url"]
+    assert "Ctrl" in captured["url"]
     assert "reporte.pdf" in captured["url"]
+
+
+def test_send_report_email_con_outlook_adjunta_el_pdf(monkeypatch):
+    import core.email_report as email_report
+
+    monkeypatch.setenv("REPORT_EMAIL_TO", "destino@ejemplo.com")
+    monkeypatch.setattr(email_report, "_outlook_available", lambda: True)
+    captured = {}
+
+    def fake_outlook(filepath, to, subject, body):
+        captured.update(filepath=filepath, to=to, subject=subject, body=body)
+        return True
+
+    monkeypatch.setattr(email_report, "_send_with_outlook", fake_outlook)
+    opened = {"mailto": 0}
+    monkeypatch.setattr(
+        email_report.webbrowser, "open", lambda url: opened.__setitem__("mailto", 1)
+    )
+
+    email_report.send_report_email("reporte.pdf", "Reporte diario", "cuerpo")
+
+    assert captured == {
+        "filepath": "reporte.pdf",
+        "to": "destino@ejemplo.com",
+        "subject": "Reporte diario",
+        "body": "cuerpo",
+    }
+    assert opened["mailto"] == 0
 
 
 def test_export_single_movement_genera_pdf_simple(tmp_path):
@@ -339,11 +371,12 @@ def test_receipt_signature_for_solo_salida_y_devolucion():
     assert receipt_signature_for("asignacion") is None
 
 
-def test_send_report_whatsapp_sin_to_avisa(monkeypatch):
+def test_send_report_whatsapp_sin_to_avisa(monkeypatch, tmp_path):
     from core.whatsapp_report import send_report_whatsapp
 
     monkeypatch.delenv("WHATSAPP_TO", raising=False)
-    with pytest.raises(RuntimeError, match="WHATSAPP_TO"):
+    monkeypatch.setenv("DIGICABLE_CONFIG_DIR", str(tmp_path))
+    with pytest.raises(RuntimeError, match="WhatsApp destino"):
         send_report_whatsapp("x.pdf")
 
 
@@ -351,6 +384,8 @@ def test_send_report_whatsapp_abre_el_enlace(monkeypatch):
     import core.whatsapp_report as whatsapp_report
 
     monkeypatch.setenv("WHATSAPP_TO", "584121234567")
+    monkeypatch.setattr(whatsapp_report, "_copy_file_to_clipboard", lambda p: False)
+    monkeypatch.setattr(whatsapp_report, "_reveal_file", lambda p: None)
     captured = {}
     monkeypatch.setattr(
         whatsapp_report.webbrowser, "open",
@@ -359,4 +394,20 @@ def test_send_report_whatsapp_abre_el_enlace(monkeypatch):
     whatsapp_report.send_report_whatsapp("reporte.pdf", "Reporte diario")
     assert captured["url"].startswith("https://wa.me/584121234567?text=")
     assert "Adjuntar" in captured["url"]
+    assert "reporte.pdf" in captured["url"]
+
+
+def test_send_report_whatsapp_copia_el_pdf_para_ctrl_v(monkeypatch):
+    import core.whatsapp_report as whatsapp_report
+
+    monkeypatch.setenv("WHATSAPP_TO", "584121234567")
+    monkeypatch.setattr(whatsapp_report, "_copy_file_to_clipboard", lambda p: True)
+    monkeypatch.setattr(whatsapp_report, "_reveal_file", lambda p: None)
+    captured = {}
+    monkeypatch.setattr(
+        whatsapp_report.webbrowser, "open",
+        lambda url: captured.setdefault("url", url),
+    )
+    whatsapp_report.send_report_whatsapp("reporte.pdf", "Reporte diario")
+    assert "Ctrl" in captured["url"]
     assert "reporte.pdf" in captured["url"]

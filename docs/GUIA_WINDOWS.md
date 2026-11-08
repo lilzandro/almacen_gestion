@@ -3,6 +3,9 @@
 Esta guía explica cómo instalar y abrir el sistema en **Windows 10 u 11**, sin
 Docker. Todo se ejecuta directamente con Python.
 
+Para el detalle de cada pantalla y de las funciones nuevas, consultá el
+**Manual de usuario**: `MANUAL_DE_USUARIO.md` o `MANUAL_DE_USUARIO.pdf`.
+
 ---
 
 ## 1. Qué necesitas
@@ -94,21 +97,24 @@ Para cerrar: usá **Cerrar Sesión** o cerrá la ventana.
 
 | Módulo | Qué hace |
 |--------|----------|
-| Panel (Dashboard) | Resumen de productos disponibles, entradas, salidas y devoluciones, y últimos movimientos. |
-| Productos | Alta, edición y baja de productos. Agrupados por modelo, con unidades individuales. |
-| Movimientos | Entradas, salidas, devoluciones y asignaciones. Exportable a PDF. |
-| Proveedores / Empleados / Vehículos | Registro de datos maestros. |
+| Panel (Dashboard) | Resumen de productos disponibles, entradas, salidas, devoluciones y últimos movimientos. |
+| Productos | Alta, edición, escaneo y exportación PDF. Agrupados por modelo, con unidades individuales, seriales, MAC y stock. |
+| Movimientos | Salidas y devoluciones, historial completo y reportes PDF. Editar y eliminar es solo para `admin`. |
+| Proveedores / Empleados / Vehículos | Datos maestros. El `admin` puede crear, editar y eliminar; el `supervisor` solo consulta. |
 | Usuarios | Solo para `admin`. |
+| Datos del sistema | Solo para `admin`: respaldo y restauración de la base de datos. |
 
 **Roles:**
-- `admin`: acceso total, incluida la gestión de usuarios.
-- `supervisor`: no gestiona usuarios ni elimina registros.
+- `admin`: acceso total, incluida la gestión de usuarios, datos del sistema, datos maestros y eliminación de productos/movimientos.
+- `supervisor`: opera el inventario y registra movimientos; puede consultar y editar productos y generar reportes. No gestiona usuarios, datos del sistema ni datos maestros, y no edita ni elimina movimientos ni elimina productos/grupos.
 
 **Almacén activo:** la barra superior permite cambiar entre almacenes. Todo lo
 que veas (productos, movimientos, panel) corresponde al almacén seleccionado.
 
-**Productos con movimientos:** no se borran definitivamente en uso normal; el
-sistema conserva el historial y el producto queda **inactivo** (baja lógica).
+**Productos con movimientos:** al eliminar un producto o un grupo, el sistema
+conserva el historial de movimientos y los datos del producto en ese historial.
+El producto deja de aparecer en el inventario activo. Si un código pertenece a
+un producto inactivo, el escaneo permite reactivarlo (solo `admin`).
 
 ---
 
@@ -132,20 +138,48 @@ El teléfono y la PC deben estar en la **misma red Wi-Fi**.
 
 ---
 
-## 7. Respaldos (recomendado)
+## 7. Respaldos y restauración (recomendado)
 
 Toda la información está en un solo archivo: **`inventory.db`**, en la carpeta del
 proyecto.
 
-**Para respaldar:**
-1. Cerrá el sistema (Cerrar Sesión y cerrar la ventana).
-2. Copiá `inventory.db` a un USB o a otra carpeta. Si ves también archivos
-   `inventory.db-wal` o `inventory.db-shm`, copialos junto con él.
+### 7.1 Respaldo desde el sistema
 
-**Para restaurar:** con el sistema cerrado, reemplazá `inventory.db` por la copia.
+1. Ingresá como `admin`.
+2. Abrí **Datos del sistema** (está debajo de **Usuarios** en la barra lateral).
+3. Presioná **Guardar respaldo…**.
+4. Elegí la carpeta y el nombre. El nombre sugerido es
+   `DigiCable_respaldo_AAAAMMDD_HHMMSS.db`.
+5. Guardá el archivo en un lugar seguro, preferentemente fuera del equipo.
 
-> No borres `inventory.db` salvo que quieras empezar de cero: se pierde todo el
-> inventario y los usuarios.
+El respaldo usa la API de SQLite, consolida la información y queda como un único
+archivo `.db`. No hace falta copiar `inventory.db-wal` ni `inventory.db-shm`.
+
+### 7.2 Restaurar desde el sistema
+
+1. Ingresá como `admin`.
+2. Abrí **Datos del sistema**.
+3. Presioná **Seleccionar respaldo…** y elegí un archivo `.db` válido.
+4. Confirmá la restauración.
+
+Antes de reemplazar la base actual, el sistema valida el archivo, crea un
+**respaldo de seguridad** en `%APPDATA%\DigiCable\backups` y recién después
+copia los datos. Al terminar, cierra la sesión: ingresá con los usuarios de la
+base restaurada.
+
+> No selecciones el archivo de la base activa. Si la restauración falla, la base
+> actual no se reemplaza y el mensaje muestra la ruta del respaldo de seguridad.
+
+### 7.3 Copia manual
+
+Como alternativa avanzada, con la aplicación cerrada podés copiar
+`inventory.db` a otra carpeta. Si existen `inventory.db-wal` o
+`inventory.db-shm`, copialos junto con el archivo principal. Para restaurar
+manualmente, reemplazá los tres archivos con la aplicación cerrada.
+
+> Para la operación normal, usá **Datos del sistema**. La copia manual requiere
+> cerrar la aplicación y puede dejar una copia inconsistente si se hace en el
+> momento equivocado.
 
 ---
 
@@ -171,19 +205,52 @@ proyecto.
 
 ---
 
-## 9. Envío de reportes por correo y WhatsApp (opcional)
+## 9. Envío de reportes por correo y WhatsApp
 
-En **Movimientos → Reportes**, hay 2 casillas opcionales: "Abrir correo" y
-"Abrir WhatsApp". Al generar un reporte, abren el cliente de correo o
-WhatsApp Web con el mensaje listo — el PDF se adjunta a mano, no se envía
-automáticamente (ninguno de los dos protocolos permite adjuntar un archivo
-por enlace).
+Los reportes se generan desde **Movimientos → Reportes**. Los destinos se
+configuran una vez y quedan guardados en
+`%APPDATA%\DigiCable\config.json`.
 
-Para habilitar esas 2 casillas, hay que definir 2 variables de entorno
-**antes** de abrir el sistema: `REPORT_EMAIL_TO` (el correo que va a recibir
-los reportes) y `WHATSAPP_TO` (el número, formato internacional sin `+`, ej.
-`584121234567` para Venezuela). Si no se definen, las casillas aparecen
-deshabilitadas (en gris) y el resto del sistema funciona igual.
+### 9.1 Configurar los destinos
+
+1. Abrí **Movimientos → Reportes**.
+2. En **Envío (opcional)**, presioná **Configurar destinos…**.
+3. Completá:
+   - **Correo destino**: por ejemplo `reportes@empresa.com`.
+   - **WhatsApp destino**: número internacional sin `+`, por ejemplo
+     `584121234567`. También se acepta un número local con `0` inicial; el
+     sistema lo convierte a `58`.
+4. Presioná **Guardar**.
+
+### 9.2 Correo
+
+1. Marcá **Enviar por correo (con el PDF adjunto)**.
+2. Generá el reporte.
+
+Si Outlook está instalado, el sistema abre un correo nuevo con el destino, el
+asunto, el cuerpo y el PDF ya adjunto. Revisalo y pulsá **Enviar** en Outlook:
+el correo no se envía automáticamente.
+
+Si Outlook no está disponible, el sistema abre el cliente de correo
+predeterminado con `mailto:` y deja el PDF copiado y seleccionado en el
+Explorador para adjuntarlo con **Ctrl + V**.
+
+### 9.3 WhatsApp
+
+1. Marcá **Abrir WhatsApp (PDF copiado; Ctrl+V)**.
+2. Generá el reporte.
+
+El sistema copia el PDF al portapapeles, abre la carpeta con el archivo
+seleccionado y abre el chat del número configurado. Para completar el envío,
+pegá el PDF con **Ctrl + V** o arrastrá el archivo desde la carpeta hasta el
+chat. El envío final siempre lo confirmás vos.
+
+### 9.4 Variables de entorno (opcional)
+
+Las variables `REPORT_EMAIL_TO` y `WHATSAPP_TO` tienen prioridad sobre la
+configuración guardada. Si una variable está definida, la interfaz muestra la
+leyenda **(variable de entorno)** y no se puede cambiar ese destino desde la
+ventana hasta modificarla o eliminarla.
 
 **Forma más simple: crear `run.bat`** en la carpeta del proyecto (clic
 derecho → Nuevo → Documento de texto, escribir el contenido de abajo,
@@ -212,5 +279,7 @@ quede siempre disponible, usá `run.bat` en su lugar.
 ## 10. Notas importantes
 
 - Cambiá la contraseña inicial `admin123` en el primer ingreso.
-- Hacé respaldos periódicos de `inventory.db` (sección 7).
+- Hacé respaldos periódicos desde **Datos del sistema** (sección 7).
+- Revisá el correo y el mensaje de WhatsApp antes de enviarlos.
 - No muevas ni renombres archivos dentro de la carpeta del proyecto.
+- Para el detalle de cada pantalla, usá el **Manual de usuario**.

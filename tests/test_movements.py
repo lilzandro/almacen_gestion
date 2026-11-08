@@ -326,3 +326,14 @@ def test_get_movements_flat_filtra_por_lista_de_ids(db, q):
 
     rows = repo.get_movements_flat(ids=[m1, m2])
     assert {r["id"] for r in rows} == {m1, m2}
+
+
+def test_movement_send_subject_incluye_tipo_y_fecha():
+    from ui.views.movements import movement_send_subject
+
+    subject = movement_send_subject(
+        {"id": 7, "type": "salida", "timestamp": "2026-11-05 10:30:00"}
+    )
+    assert "Movimiento #7" in subject
+    assert "Salida" in subject
+    assert "2026-11-05 10:30:00" in subject
